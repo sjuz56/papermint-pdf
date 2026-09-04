@@ -946,4 +946,29 @@ def pdf_word_download(
             != "done"
         ):
 
-            raise
+            raise HTTPException(
+            409,
+            "Conversion is not finished yet.",
+        )
+
+    output = job.get("output")
+
+    if not output:
+        raise HTTPException(
+            500,
+            "Converted DOCX path is missing.",
+        )
+
+    output_path = Path(output)
+
+    if not output_path.exists():
+        raise HTTPException(
+            500,
+            "Converted DOCX file was not found.",
+        )
+
+    return FileResponse(
+        path=str(output_path),
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        filename="converted.docx",
+    )
