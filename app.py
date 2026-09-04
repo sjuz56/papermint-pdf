@@ -113,9 +113,7 @@ def libreoffice_to_pdf(src: Path) -> Path:
 
     candidates = list(outdir.glob("*.pdf"))
 
-    if not candidates:
-        raise HTTPException(
-            500,
+
             
 if not candidates:
     raise HTTPException(
