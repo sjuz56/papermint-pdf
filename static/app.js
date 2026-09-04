@@ -489,7 +489,7 @@ if (form) {
                 await startResponse.json();
 
               message =
-                data.detail
+                data?.detail
                 || message;
 
             } catch (_) {}
@@ -584,7 +584,7 @@ if (form) {
                 await downloadResponse.json();
 
               message =
-                data.detail
+                data?.detail
                 || message;
 
             } catch (_) {}
@@ -609,7 +609,7 @@ if (form) {
               await downloadResponse.json();
 
             throw new Error(
-              data.detail
+              data?.detail
               ||
               'Server returned JSON instead of DOCX.'
             );
@@ -649,7 +649,7 @@ if (form) {
               await r.json();
 
             message =
-              j.detail
+              j?.detail
               || message;
 
           } catch (_) {}
