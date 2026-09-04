@@ -116,4 +116,11 @@ def libreoffice_to_pdf(src: Path) -> Path:
     if not candidates:
         raise HTTPException(
             500,
-            f"LibreOffice conversion failed: {cp.stderr[-500
+            
+if not candidates:
+    raise HTTPException(
+        500,
+        f"LibreOffice conversion failed: {cp.stderr[-500:]}",
+    )
+
+return candidates[0]
