@@ -635,15 +635,6 @@ def pdf_to_word_editable(
 
     doc = Document()
 
-    first_p = doc.paragraphs[0]
-
-    p_element = (
-        first_p._element
-    )
-
-    p_element.getparent().remove(
-        p_element
-    )
 
     for (
         page_index,
