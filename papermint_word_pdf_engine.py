@@ -220,6 +220,16 @@ def word_to_pdf(
     destination = Path(output)
     _validate_word_file(source_path, max_input_mb)
     soffice = _find_soffice()
+    require_libreoffice = os.environ.get("PAPERMINT_REQUIRE_LIBREOFFICE", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    if require_libreoffice and not soffice:
+        raise WordPdfError(
+            "High-fidelity Word to PDF conversion is unavailable because LibreOffice is missing."
+        )
 
     destination.parent.mkdir(parents=True, exist_ok=True)
     work_root = Path(
@@ -247,6 +257,7 @@ def word_to_pdf(
         )
 
         if soffice:
+            converter = "libreoffice"
             converted = _convert_with_libreoffice(
                 soffice,
                 local_source,
@@ -256,6 +267,7 @@ def word_to_pdf(
                 timeout_seconds,
             )
         else:
+            converter = "pandoc-weasyprint"
             converted = _convert_with_pandoc(
                 local_source,
                 output_dir,
@@ -286,4 +298,5 @@ def word_to_pdf(
         "pages": pages,
         "input_bytes": source_path.stat().st_size,
         "output_bytes": destination.stat().st_size,
+        "converter": converter,
     }
