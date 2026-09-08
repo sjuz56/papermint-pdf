@@ -288,6 +288,16 @@ function openTool(t) {
     `;
   }
 
+  if (t.id === 'watermark') {
+    x += `
+      <div class="field">
+        <small>
+          The watermark is placed diagonally across every page with light transparency.
+        </small>
+      </div>
+    `;
+  }
+
   if (['split', 'organize'].includes(t.id)) {
     x += field(
       t.id === 'organize'
@@ -472,6 +482,10 @@ if (form) {
 
       if (tool === 'sign' && !(fd.get('text') || '').trim()) {
         throw new Error('Please enter the signature text.');
+      }
+
+      if (tool === 'watermark' && !(fd.get('text') || '').trim()) {
+        throw new Error('Please enter the watermark text.');
       }
 
       // =========================================
