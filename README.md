@@ -27,7 +27,7 @@ Word objects such as positioned images.
 ## Background processing and overload protection
 
 Merge, split, compress, Word→PDF, rotate, organize, protect, unlock, sign and
-watermark jobs
+watermark and page-number jobs
 are placed in a bounded Redis/RQ queue. One background worker processes one of
 these jobs at a time while
 the web process remains responsive. Up to 20 jobs may wait; additional submissions
