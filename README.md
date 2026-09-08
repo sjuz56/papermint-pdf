@@ -47,6 +47,6 @@ Merge, split/ranges, compress, PDF→Word (Visual 1:1 + Editable), PDF→PowerPo
 
 ## Important production notes
 
-This is a functional MVP, not yet a hardened public SaaS. Before public launch add automatic temp-file deletion, rate limiting, malware scanning, page limits, encrypted storage, logging/monitoring, legal/privacy pages, billing, and sandboxed document conversion workers.
+This is a functional MVP, not yet a hardened public SaaS. Before public launch add rate limiting, malware scanning, page limits, encrypted storage, logging/monitoring, legal/privacy pages, billing, and sandboxed document conversion workers.
 
 `Visual 1:1` PDF→Word preserves visual appearance by placing high-resolution page renders into DOCX pages. It is visually faithful but the page body itself is not fully editable. `Editable` extracts text into normal Word paragraphs and is therefore more editable but less layout-perfect.
