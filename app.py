@@ -68,6 +68,7 @@ RESULT_FILE_PREFIXES = (
     "unlocked-",
     "signed-",
     "watermarked-",
+    "numbered-",
 )
 
 PDF_WORD_OUTPUTS = TMP / "pdf-word-results"
@@ -234,13 +235,17 @@ async def convert_tool(
     signature_page: int = Form(1),
     signature_x: float = Form(30),
     signature_y: float = Form(30),
+    page_number_start: int = Form(1),
+    page_number_position: str = Form("bottom-center"),
+    page_number_format: str = Form("number"),
+    page_number_skip_first: bool = Form(False),
 ):
     cleanup_stale_temp_files()
 
     # Other lightweight tools will be added here one by one after testing.
     if tool not in {
         "merge", "split", "compress", "word-pdf", "rotate", "organize",
-        "protect", "unlock", "sign", "watermark"
+        "protect", "unlock", "sign", "watermark", "page-numbers"
     }:
         raise HTTPException(400, "This tool is not available yet.")
 
@@ -260,6 +265,7 @@ async def convert_tool(
             "unlock": "unlock",
             "sign": "sign",
             "watermark": "watermark",
+            "page-numbers": "number",
         }[tool]
         file_kind = "Word file" if tool == "word-pdf" else "PDF file"
         raise HTTPException(400, f"Please upload exactly one {file_kind} to {action}.")
@@ -298,6 +304,16 @@ async def convert_tool(
             raise HTTPException(400, "Please enter the watermark text.")
         if len(text.strip()) > 100:
             raise HTTPException(400, "Watermark text can contain at most 100 characters.")
+    elif tool == "page-numbers":
+        if page_number_start < 0 or page_number_start > 1_000_000:
+            raise HTTPException(400, "Start number must be between 0 and 1,000,000.")
+        if page_number_position not in {
+            "top-left", "top-center", "top-right",
+            "bottom-left", "bottom-center", "bottom-right",
+        }:
+            raise HTTPException(400, "Choose a valid page-number position.")
+        if page_number_format not in {"number", "page", "page-total"}:
+            raise HTTPException(400, "Choose a valid page-number format.")
 
     sources: List[Path] = []
     if tool == "merge":
@@ -318,6 +334,8 @@ async def convert_tool(
         output = TMP / f"signed-{uuid.uuid4().hex}.pdf"
     elif tool == "watermark":
         output = TMP / f"watermarked-{uuid.uuid4().hex}.pdf"
+    elif tool == "page-numbers":
+        output = TMP / f"numbered-{uuid.uuid4().hex}.pdf"
     else:
         output = TMP / f"word-pdf-{uuid.uuid4().hex}.pdf"
 
@@ -346,6 +364,10 @@ async def convert_tool(
             signature_x=signature_x,
             signature_y=signature_y,
             watermark_text=text,
+            page_number_start=page_number_start,
+            page_number_position=page_number_position,
+            page_number_format=page_number_format,
+            page_number_skip_first=page_number_skip_first,
         )
     except QueueCapacityReached as exc:
         _delete_paths([*sources, output])
