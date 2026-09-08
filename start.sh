@@ -46,4 +46,18 @@ uvicorn app:app \
     --limit-concurrency "${PAPERMINT_HTTP_CONCURRENCY:-50}" &
 web_pid=$!
 
+while kill -0 "$web_pid" 2>/dev/null \
+    && kill -0 "$worker_pid" 2>/dev/null; do
+    if [ -n "$redis_pid" ] && ! kill -0 "$redis_pid" 2>/dev/null; then
+        echo "Redis stopped unexpectedly." >&2
+        exit 1
+    fi
+    sleep 2
+done
+
+if ! kill -0 "$worker_pid" 2>/dev/null; then
+    echo "Background worker stopped unexpectedly." >&2
+    exit 1
+fi
+
 wait "$web_pid"
