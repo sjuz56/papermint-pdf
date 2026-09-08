@@ -21,6 +21,7 @@ from papermint_split_engine import SplitError, split_pdf
 from papermint_compress_engine import CompressError, compress_pdf
 from papermint_word_pdf_engine import WordPdfError, word_to_pdf
 from papermint_rotate_engine import RotateError, rotate_pdf
+from papermint_organize_engine import OrganizeError, organize_pdf
 
 
 # ============================================================
@@ -150,7 +151,7 @@ async def convert_tool(
     rotation: int = Form(90),
 ):
     # Other lightweight tools will be added here one by one after testing.
-    if tool not in {"merge", "split", "compress", "word-pdf", "rotate"}:
+    if tool not in {"merge", "split", "compress", "word-pdf", "rotate", "organize"}:
         raise HTTPException(400, "This tool is not available yet.")
 
     if tool == "merge":
@@ -164,6 +165,7 @@ async def convert_tool(
             "compress": "compress",
             "word-pdf": "convert",
             "rotate": "rotate",
+            "organize": "organize",
         }[tool]
         file_kind = "Word file" if tool == "word-pdf" else "PDF file"
         raise HTTPException(400, f"Please upload exactly one {file_kind} to {action}.")
@@ -185,6 +187,8 @@ async def convert_tool(
         output = TMP / f"compressed-{uuid.uuid4().hex}.pdf"
     elif tool == "rotate":
         output = TMP / f"rotated-{uuid.uuid4().hex}.pdf"
+    elif tool == "organize":
+        output = TMP / f"organized-{uuid.uuid4().hex}.pdf"
     else:
         output = TMP / f"word-pdf-{uuid.uuid4().hex}.pdf"
 
@@ -200,9 +204,18 @@ async def convert_tool(
             await run_in_threadpool(compress_pdf, sources[0], output)
         elif tool == "rotate":
             await run_in_threadpool(rotate_pdf, sources[0], output, rotation)
+        elif tool == "organize":
+            await run_in_threadpool(organize_pdf, sources[0], output, pages)
         else:
             await run_in_threadpool(word_to_pdf, sources[0], output)
-    except (MergeError, SplitError, CompressError, WordPdfError, RotateError) as exc:
+    except (
+        MergeError,
+        SplitError,
+        CompressError,
+        WordPdfError,
+        RotateError,
+        OrganizeError,
+    ) as exc:
         _delete_paths([*sources, output])
         raise HTTPException(400, str(exc))
     except Exception as exc:
@@ -218,6 +231,7 @@ async def convert_tool(
             "compress": "compressed.pdf",
             "word-pdf": "converted.pdf",
             "rotate": "rotated.pdf",
+            "organize": "organized.pdf",
         }[tool],
         background=BackgroundTask(_delete_paths, [*sources, output]),
     )
