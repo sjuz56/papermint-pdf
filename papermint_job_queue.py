@@ -22,6 +22,7 @@ from papermint_organize_engine import OrganizeError, organize_pdf
 from papermint_protect_engine import ProtectError, protect_pdf
 from papermint_unlock_engine import UnlockError, unlock_pdf
 from papermint_sign_engine import SignError, sign_pdf
+from papermint_watermark_engine import WatermarkError, watermark_pdf
 
 
 QUEUE_NAME = os.getenv("PAPERMINT_QUEUE_NAME", "papermint")
@@ -53,6 +54,7 @@ KNOWN_TOOL_ERRORS = (
     ProtectError,
     UnlockError,
     SignError,
+    WatermarkError,
 )
 
 
@@ -108,6 +110,7 @@ def enqueue_tool_job(
     signature_page: int = 1,
     signature_x: float = 30,
     signature_y: float = 30,
+    watermark_text: str = "",
 ) -> dict:
     """Add one bounded background job and return its public identifier."""
     connection, queue = queue_connection()
@@ -138,6 +141,7 @@ def enqueue_tool_job(
                 "signature_page": signature_page,
                 "signature_x": signature_x,
                 "signature_y": signature_y,
+                "watermark_text": watermark_text,
             },
             timeout=JOB_TIMEOUT,
             ttl=JOB_TTL,
@@ -180,6 +184,7 @@ def process_tool_job(
     signature_page: int = 1,
     signature_x: float = 30,
     signature_y: float = 30,
+    watermark_text: str = "",
 ) -> dict:
     """Execute one job inside an RQ worker process."""
     job = get_current_job()
@@ -232,6 +237,10 @@ def process_tool_job(
             )
             download_name = "signed.pdf"
             media_type = "application/pdf"
+        elif tool == "watermark":
+            report = watermark_pdf(sources[0], output, watermark_text)
+            download_name = "watermarked.pdf"
+            media_type = "application/pdf"
         else:
             raise RuntimeError("Unsupported queued tool.")
         succeeded = True
@@ -256,11 +265,12 @@ def process_tool_job(
 
         # The password is needed only while queued/running. Remove it from the
         # persisted RQ job data immediately after processing finishes.
-        if job and (password or signature_text):
+        if job and (password or signature_text or watermark_text):
             try:
                 clean_kwargs = dict(job.kwargs or {})
                 clean_kwargs["password"] = ""
                 clean_kwargs["signature_text"] = ""
+                clean_kwargs["watermark_text"] = ""
                 job.kwargs = clean_kwargs
                 job.save()
             except Exception:
