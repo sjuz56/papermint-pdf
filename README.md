@@ -26,8 +26,9 @@ Word objects such as positioned images.
 
 ## Background processing and overload protection
 
-Merge, split, compress, Word→PDF, rotate and organize jobs are placed in a bounded
-Redis/RQ queue. One background worker processes one of these jobs at a time while
+Merge, split, compress, Word→PDF, rotate, organize, protect, unlock and sign jobs
+are placed in a bounded Redis/RQ queue. One background worker processes one of
+these jobs at a time while
 the web process remains responsive. Up to 20 jobs may wait; additional submissions
 receive HTTP 429 and can be retried later. Each file is limited to 50 MB, a request
 to 100 MB, and each job to 10 minutes by default.
@@ -36,6 +37,9 @@ The Docker image starts a small local Redis instance automatically. If `REDIS_UR
 is provided, it uses that external Redis/Render Key Value instance instead. The
 PDF→Word V28 engine retains its separate bounded queue (one worker and six waiting
 jobs).
+
+Uploaded originals are removed as soon as queued processing finishes. Results are
+removed after download or automatically after 30 minutes by default.
 
 The local Redis setup protects a single Render instance from overload, but its queue
 is not durable across a container restart. Horizontal scaling requires external
