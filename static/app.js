@@ -277,6 +277,17 @@ function openTool(t) {
     );
   }
 
+  if (t.id === 'sign') {
+    x += `
+      <div class="field">
+        <small>
+          Adds a visible text signature. This is not a certificate-based digital signature.
+          Positions are measured from the top-left corner of the page.
+        </small>
+      </div>
+    `;
+  }
+
   if (['split', 'organize'].includes(t.id)) {
     x += field(
       t.id === 'organize'
@@ -457,6 +468,10 @@ if (form) {
 
       if (tool === 'unlock' && !fd.get('password')) {
         throw new Error('Please enter the PDF password.');
+      }
+
+      if (tool === 'sign' && !(fd.get('text') || '').trim()) {
+        throw new Error('Please enter the signature text.');
       }
 
       // =========================================
