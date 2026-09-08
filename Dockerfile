@@ -14,6 +14,7 @@ RUN apt-get update \
         fonts-dejavu-core \
         fonts-liberation \
         fontconfig \
+        redis-server \
     && fc-cache -f \
     && rm -rf /var/lib/apt/lists/*
 
@@ -27,4 +28,4 @@ COPY . .
 
 EXPOSE 10000
 
-CMD ["sh", "-c", "uvicorn app:app --host 0.0.0.0 --port ${PORT:-10000}"]
+CMD ["sh", "./start.sh"]
