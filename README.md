@@ -26,8 +26,8 @@ Word objects such as positioned images.
 
 ## Background processing and overload protection
 
-Merge, split, compress, Word→PDF, rotate, organize, protect, unlock, sign and
-watermark and page-number jobs
+Merge, split, compress, PDF→PowerPoint, Word→PDF, rotate, organize, protect,
+unlock, sign, watermark and page-number jobs
 are placed in a bounded Redis/RQ queue. One background worker processes one of
 these jobs at a time while
 the web process remains responsive. Up to 20 jobs may wait; additional submissions
@@ -55,3 +55,7 @@ Merge, split/ranges, compress, PDF→Word (Visual 1:1 + Editable), PDF→PowerPo
 This is a functional MVP, not yet a hardened public SaaS. Before public launch add rate limiting, malware scanning, page limits, encrypted storage, logging/monitoring, legal/privacy pages, billing, and sandboxed document conversion workers.
 
 `Visual 1:1` PDF→Word preserves visual appearance by placing high-resolution page renders into DOCX pages. It is visually faithful but the page body itself is not fully editable. `Editable` extracts text into normal Word paragraphs and is therefore more editable but less layout-perfect.
+
+PDF→PowerPoint creates one high-resolution page image per slide. It preserves the
+PDF appearance and page proportions, but the content inside the page image is not
+individually editable.
