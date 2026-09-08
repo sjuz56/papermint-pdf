@@ -509,27 +509,104 @@ if (form) {
       // ALL OTHER TOOLS
       // =========================================
 
-      const r = await fetch('/api/convert', {
+      const startResponse = await fetch('/api/convert', {
         method: 'POST',
         body: fd
       });
 
-      if (!r.ok) {
-        let message = 'Conversion failed';
+      if (!startResponse.ok) {
+        let message = 'Could not start processing';
 
         try {
-          const j = await r.json();
-          message = j?.detail || message;
+          const data = await startResponse.json();
+          message = data?.detail || message;
+        } catch (_) {}
+
+        throw new Error(message);
+      }
+
+      const startData = await startResponse.json();
+      const jobId = startData.job_id;
+
+      if (!jobId) {
+        throw new Error('Missing processing job ID.');
+      }
+
+      while (true) {
+        const position = startData.queue_position;
+
+        s.textContent = position
+          ? `Waiting in queue (position ${position})…`
+          : 'Waiting in queue…';
+
+        await new Promise(resolve =>
+          setTimeout(resolve, 1500)
+        );
+
+        const statusResponse = await fetch(
+          `/api/jobs/status/${jobId}`,
+          {
+            cache: 'no-store'
+          }
+        );
+
+        if (!statusResponse.ok) {
+          let message = 'Could not check processing status';
+
+          try {
+            const data = await statusResponse.json();
+            message = data?.detail || message;
+          } catch (_) {}
+
+          throw new Error(message);
+        }
+
+        const statusData = await statusResponse.json();
+
+        if (statusData.status === 'error') {
+          throw new Error(
+            statusData.error || 'Processing failed.'
+          );
+        }
+
+        if (statusData.status === 'done') {
+          break;
+        }
+
+        if (statusData.status === 'processing') {
+          s.textContent = 'Processing document…';
+        } else if (statusData.queue_position) {
+          startData.queue_position =
+            statusData.queue_position;
+        }
+      }
+
+      s.textContent = 'Preparing download…';
+
+      const downloadResponse = await fetch(
+        `/api/jobs/download/${jobId}`,
+        {
+          method: 'GET',
+          cache: 'no-store'
+        }
+      );
+
+      if (!downloadResponse.ok) {
+        let message = 'Download failed';
+
+        try {
+          const data = await downloadResponse.json();
+          message = data?.detail || message;
         } catch (_) {}
 
         throw new Error(message);
       }
 
       let name = 'result';
-
       const cd =
-        r.headers.get('content-disposition') || '';
-
+        downloadResponse.headers.get(
+          'content-disposition'
+        ) || '';
       const m = cd.match(
         /filename="?([^";]+)"?/
       );
@@ -538,7 +615,10 @@ if (form) {
         name = m[1];
       }
 
-      await downloadBlobResponse(r, name);
+      await downloadBlobResponse(
+        downloadResponse,
+        name
+      );
 
       s.textContent =
         'Done. Your file has been prepared.';
