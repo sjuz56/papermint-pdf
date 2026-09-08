@@ -5,6 +5,7 @@ from starlette.background import BackgroundTask
 from starlette.concurrency import run_in_threadpool
 from pathlib import Path
 from typing import List
+import os
 import shutil
 import threading
 import uuid
@@ -38,6 +39,11 @@ from papermint_job_queue import (
 BASE = Path(__file__).parent
 TMP = BASE / "tmp"
 TMP.mkdir(exist_ok=True)
+
+MAX_UPLOAD_MB = max(1, int(os.getenv("PAPERMINT_MAX_UPLOAD_MB", "50")))
+MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024
+MAX_REQUEST_MB = max(MAX_UPLOAD_MB, int(os.getenv("PAPERMINT_MAX_REQUEST_MB", "100")))
+MAX_REQUEST_BYTES = MAX_REQUEST_MB * 1024 * 1024
 
 PDF_WORD_OUTPUTS = TMP / "pdf-word-results"
 PDF_WORD_OUTPUTS.mkdir(exist_ok=True)
@@ -131,8 +137,23 @@ def save_upload(upload: UploadFile) -> Path:
         path = TMP / f"upload-{threading.get_ident()}-{id(upload)}-{counter}{suffix}"
         counter += 1
 
-    with path.open("wb") as f:
-        shutil.copyfileobj(upload.file, f)
+    written = 0
+    try:
+        with path.open("wb") as stream:
+            while True:
+                chunk = upload.file.read(1024 * 1024)
+                if not chunk:
+                    break
+                written += len(chunk)
+                if written > MAX_UPLOAD_BYTES:
+                    raise HTTPException(
+                        413,
+                        f"Each uploaded file can be up to {MAX_UPLOAD_MB} MB.",
+                    )
+                stream.write(chunk)
+    except Exception:
+        path.unlink(missing_ok=True)
+        raise
 
     return path
 
@@ -200,8 +221,16 @@ async def convert_tool(
         output = TMP / f"word-pdf-{uuid.uuid4().hex}.pdf"
 
     try:
+        total_upload_bytes = 0
         for upload in files:
-            sources.append(save_upload(upload))
+            source = save_upload(upload)
+            sources.append(source)
+            total_upload_bytes += source.stat().st_size
+            if total_upload_bytes > MAX_REQUEST_BYTES:
+                raise HTTPException(
+                    413,
+                    f"The combined upload can be up to {MAX_REQUEST_MB} MB.",
+                )
 
         queued = await run_in_threadpool(
             enqueue_tool_job,
