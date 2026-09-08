@@ -82,8 +82,12 @@ def rotate_pdf(
             writer.write(stream)
         temporary.replace(destination)
     except RotateError:
+        destination.unlink(missing_ok=True)
+        temporary.unlink(missing_ok=True)
         raise
     except Exception as exc:
+        destination.unlink(missing_ok=True)
+        temporary.unlink(missing_ok=True)
         raise RotateError("The PDF could not be rotated.") from exc
     finally:
         writer.close()
