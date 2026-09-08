@@ -66,6 +66,7 @@ RESULT_FILE_PREFIXES = (
     "organized-",
     "protected-",
     "unlocked-",
+    "signed-",
 )
 
 PDF_WORD_OUTPUTS = TMP / "pdf-word-results"
@@ -228,13 +229,17 @@ async def convert_tool(
     rotation: int = Form(90),
     password: str = Form(""),
     password_confirm: str = Form(""),
+    text: str = Form(""),
+    signature_page: int = Form(1),
+    signature_x: float = Form(30),
+    signature_y: float = Form(30),
 ):
     cleanup_stale_temp_files()
 
     # Other lightweight tools will be added here one by one after testing.
     if tool not in {
         "merge", "split", "compress", "word-pdf", "rotate", "organize",
-        "protect", "unlock"
+        "protect", "unlock", "sign"
     }:
         raise HTTPException(400, "This tool is not available yet.")
 
@@ -252,6 +257,7 @@ async def convert_tool(
             "organize": "organize",
             "protect": "protect",
             "unlock": "unlock",
+            "sign": "sign",
         }[tool]
         file_kind = "Word file" if tool == "word-pdf" else "PDF file"
         raise HTTPException(400, f"Please upload exactly one {file_kind} to {action}.")
@@ -276,6 +282,15 @@ async def convert_tool(
             raise HTTPException(400, "Please enter the PDF password.")
         if len(password) > 128:
             raise HTTPException(400, "Password can contain at most 128 characters.")
+    elif tool == "sign":
+        if not text.strip():
+            raise HTTPException(400, "Please enter the signature text.")
+        if len(text.strip()) > 200:
+            raise HTTPException(400, "Signature text can contain at most 200 characters.")
+        if signature_page < 1:
+            raise HTTPException(400, "Page number must be at least 1.")
+        if signature_x < 0 or signature_y < 0:
+            raise HTTPException(400, "Signature position cannot be negative.")
 
     sources: List[Path] = []
     if tool == "merge":
@@ -292,6 +307,8 @@ async def convert_tool(
         output = TMP / f"protected-{uuid.uuid4().hex}.pdf"
     elif tool == "unlock":
         output = TMP / f"unlocked-{uuid.uuid4().hex}.pdf"
+    elif tool == "sign":
+        output = TMP / f"signed-{uuid.uuid4().hex}.pdf"
     else:
         output = TMP / f"word-pdf-{uuid.uuid4().hex}.pdf"
 
@@ -315,6 +332,10 @@ async def convert_tool(
             pages=pages,
             rotation=rotation,
             password=password,
+            signature_text=text,
+            signature_page=signature_page,
+            signature_x=signature_x,
+            signature_y=signature_y,
         )
     except QueueCapacityReached as exc:
         _delete_paths([*sources, output])
