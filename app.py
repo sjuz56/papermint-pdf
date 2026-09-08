@@ -69,6 +69,7 @@ RESULT_FILE_PREFIXES = (
     "signed-",
     "watermarked-",
     "numbered-",
+    "pdf-ppt-",
 )
 
 PDF_WORD_OUTPUTS = TMP / "pdf-word-results"
@@ -245,7 +246,7 @@ async def convert_tool(
     # Other lightweight tools will be added here one by one after testing.
     if tool not in {
         "merge", "split", "compress", "word-pdf", "rotate", "organize",
-        "protect", "unlock", "sign", "watermark", "page-numbers"
+        "protect", "unlock", "sign", "watermark", "page-numbers", "pdf-ppt"
     }:
         raise HTTPException(400, "This tool is not available yet.")
 
@@ -266,6 +267,7 @@ async def convert_tool(
             "sign": "sign",
             "watermark": "watermark",
             "page-numbers": "number",
+            "pdf-ppt": "convert",
         }[tool]
         file_kind = "Word file" if tool == "word-pdf" else "PDF file"
         raise HTTPException(400, f"Please upload exactly one {file_kind} to {action}.")
@@ -336,6 +338,8 @@ async def convert_tool(
         output = TMP / f"watermarked-{uuid.uuid4().hex}.pdf"
     elif tool == "page-numbers":
         output = TMP / f"numbered-{uuid.uuid4().hex}.pdf"
+    elif tool == "pdf-ppt":
+        output = TMP / f"pdf-ppt-{uuid.uuid4().hex}.pptx"
     else:
         output = TMP / f"word-pdf-{uuid.uuid4().hex}.pdf"
 
