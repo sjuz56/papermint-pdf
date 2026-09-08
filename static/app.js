@@ -240,12 +240,26 @@ function openTool(t) {
   }
 
   if (t.id === 'unlock') {
-    x += field(
-      'Password',
-      'password',
-      'password',
-      'Enter password'
-    );
+    x += `
+      <div class="field">
+        <label>PDF password</label>
+        <input
+          name="password"
+          type="password"
+          placeholder="Enter the current password"
+          maxlength="128"
+          autocomplete="current-password"
+          required
+        >
+      </div>
+
+      <div class="field">
+        <small>
+          Enter the password currently required to open this PDF.
+          The downloaded copy will no longer require it.
+        </small>
+      </div>
+    `;
   }
 
   if (['watermark', 'redact', 'sign'].includes(t.id)) {
@@ -439,6 +453,10 @@ if (form) {
         if (password !== confirmation) {
           throw new Error('Passwords do not match.');
         }
+      }
+
+      if (tool === 'unlock' && !fd.get('password')) {
+        throw new Error('Please enter the PDF password.');
       }
 
       // =========================================

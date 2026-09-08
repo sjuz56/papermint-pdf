@@ -208,7 +208,8 @@ async def convert_tool(
 
     # Other lightweight tools will be added here one by one after testing.
     if tool not in {
-        "merge", "split", "compress", "word-pdf", "rotate", "organize", "protect"
+        "merge", "split", "compress", "word-pdf", "rotate", "organize",
+        "protect", "unlock"
     }:
         raise HTTPException(400, "This tool is not available yet.")
 
@@ -225,6 +226,7 @@ async def convert_tool(
             "rotate": "rotate",
             "organize": "organize",
             "protect": "protect",
+            "unlock": "unlock",
         }[tool]
         file_kind = "Word file" if tool == "word-pdf" else "PDF file"
         raise HTTPException(400, f"Please upload exactly one {file_kind} to {action}.")
@@ -244,6 +246,11 @@ async def convert_tool(
             raise HTTPException(400, "Password must contain at least 6 characters.")
         if len(password) > 128:
             raise HTTPException(400, "Password can contain at most 128 characters.")
+    elif tool == "unlock":
+        if not password:
+            raise HTTPException(400, "Please enter the PDF password.")
+        if len(password) > 128:
+            raise HTTPException(400, "Password can contain at most 128 characters.")
 
     sources: List[Path] = []
     if tool == "merge":
@@ -258,6 +265,8 @@ async def convert_tool(
         output = TMP / f"organized-{uuid.uuid4().hex}.pdf"
     elif tool == "protect":
         output = TMP / f"protected-{uuid.uuid4().hex}.pdf"
+    elif tool == "unlock":
+        output = TMP / f"unlocked-{uuid.uuid4().hex}.pdf"
     else:
         output = TMP / f"word-pdf-{uuid.uuid4().hex}.pdf"
 

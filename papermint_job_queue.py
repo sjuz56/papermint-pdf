@@ -19,6 +19,7 @@ from papermint_word_pdf_engine import WordPdfError, word_to_pdf
 from papermint_rotate_engine import RotateError, rotate_pdf
 from papermint_organize_engine import OrganizeError, organize_pdf
 from papermint_protect_engine import ProtectError, protect_pdf
+from papermint_unlock_engine import UnlockError, unlock_pdf
 
 
 QUEUE_NAME = os.getenv("PAPERMINT_QUEUE_NAME", "papermint")
@@ -44,6 +45,7 @@ KNOWN_TOOL_ERRORS = (
     RotateError,
     OrganizeError,
     ProtectError,
+    UnlockError,
 )
 
 
@@ -174,6 +176,10 @@ def process_tool_job(
         elif tool == "protect":
             report = protect_pdf(sources[0], output, password)
             download_name = "protected.pdf"
+            media_type = "application/pdf"
+        elif tool == "unlock":
+            report = unlock_pdf(sources[0], output, password)
+            download_name = "unlocked.pdf"
             media_type = "application/pdf"
         else:
             raise RuntimeError("Unsupported queued tool.")
