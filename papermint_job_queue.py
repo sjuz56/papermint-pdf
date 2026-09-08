@@ -23,6 +23,7 @@ from papermint_protect_engine import ProtectError, protect_pdf
 from papermint_unlock_engine import UnlockError, unlock_pdf
 from papermint_sign_engine import SignError, sign_pdf
 from papermint_watermark_engine import WatermarkError, watermark_pdf
+from papermint_page_numbers_engine import PageNumbersError, add_page_numbers
 
 
 QUEUE_NAME = os.getenv("PAPERMINT_QUEUE_NAME", "papermint")
@@ -55,6 +56,7 @@ KNOWN_TOOL_ERRORS = (
     UnlockError,
     SignError,
     WatermarkError,
+    PageNumbersError,
 )
 
 
@@ -111,6 +113,10 @@ def enqueue_tool_job(
     signature_x: float = 30,
     signature_y: float = 30,
     watermark_text: str = "",
+    page_number_start: int = 1,
+    page_number_position: str = "bottom-center",
+    page_number_format: str = "number",
+    page_number_skip_first: bool = False,
 ) -> dict:
     """Add one bounded background job and return its public identifier."""
     connection, queue = queue_connection()
@@ -142,6 +148,10 @@ def enqueue_tool_job(
                 "signature_x": signature_x,
                 "signature_y": signature_y,
                 "watermark_text": watermark_text,
+                "page_number_start": page_number_start,
+                "page_number_position": page_number_position,
+                "page_number_format": page_number_format,
+                "page_number_skip_first": page_number_skip_first,
             },
             timeout=JOB_TIMEOUT,
             ttl=JOB_TTL,
@@ -185,6 +195,10 @@ def process_tool_job(
     signature_x: float = 30,
     signature_y: float = 30,
     watermark_text: str = "",
+    page_number_start: int = 1,
+    page_number_position: str = "bottom-center",
+    page_number_format: str = "number",
+    page_number_skip_first: bool = False,
 ) -> dict:
     """Execute one job inside an RQ worker process."""
     job = get_current_job()
@@ -240,6 +254,17 @@ def process_tool_job(
         elif tool == "watermark":
             report = watermark_pdf(sources[0], output, watermark_text)
             download_name = "watermarked.pdf"
+            media_type = "application/pdf"
+        elif tool == "page-numbers":
+            report = add_page_numbers(
+                sources[0],
+                output,
+                page_number_start,
+                page_number_position,
+                page_number_format,
+                page_number_skip_first,
+            )
+            download_name = "numbered.pdf"
             media_type = "application/pdf"
         else:
             raise RuntimeError("Unsupported queued tool.")
