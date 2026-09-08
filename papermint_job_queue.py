@@ -24,6 +24,7 @@ from papermint_unlock_engine import UnlockError, unlock_pdf
 from papermint_sign_engine import SignError, sign_pdf
 from papermint_watermark_engine import WatermarkError, watermark_pdf
 from papermint_page_numbers_engine import PageNumbersError, add_page_numbers
+from papermint_pdf_ppt_engine import PdfPowerPointError, pdf_to_powerpoint
 
 
 QUEUE_NAME = os.getenv("PAPERMINT_QUEUE_NAME", "papermint")
@@ -57,6 +58,7 @@ KNOWN_TOOL_ERRORS = (
     SignError,
     WatermarkError,
     PageNumbersError,
+    PdfPowerPointError,
 )
 
 
@@ -266,6 +268,12 @@ def process_tool_job(
             )
             download_name = "numbered.pdf"
             media_type = "application/pdf"
+        elif tool == "pdf-ppt":
+            report = pdf_to_powerpoint(sources[0], output)
+            download_name = "converted.pptx"
+            media_type = (
+                "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+            )
         else:
             raise RuntimeError("Unsupported queued tool.")
         succeeded = True
