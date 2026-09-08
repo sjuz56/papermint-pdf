@@ -67,6 +67,7 @@ RESULT_FILE_PREFIXES = (
     "protected-",
     "unlocked-",
     "signed-",
+    "watermarked-",
 )
 
 PDF_WORD_OUTPUTS = TMP / "pdf-word-results"
@@ -239,7 +240,7 @@ async def convert_tool(
     # Other lightweight tools will be added here one by one after testing.
     if tool not in {
         "merge", "split", "compress", "word-pdf", "rotate", "organize",
-        "protect", "unlock", "sign"
+        "protect", "unlock", "sign", "watermark"
     }:
         raise HTTPException(400, "This tool is not available yet.")
 
@@ -258,6 +259,7 @@ async def convert_tool(
             "protect": "protect",
             "unlock": "unlock",
             "sign": "sign",
+            "watermark": "watermark",
         }[tool]
         file_kind = "Word file" if tool == "word-pdf" else "PDF file"
         raise HTTPException(400, f"Please upload exactly one {file_kind} to {action}.")
@@ -291,6 +293,11 @@ async def convert_tool(
             raise HTTPException(400, "Page number must be at least 1.")
         if signature_x < 0 or signature_y < 0:
             raise HTTPException(400, "Signature position cannot be negative.")
+    elif tool == "watermark":
+        if not text.strip():
+            raise HTTPException(400, "Please enter the watermark text.")
+        if len(text.strip()) > 100:
+            raise HTTPException(400, "Watermark text can contain at most 100 characters.")
 
     sources: List[Path] = []
     if tool == "merge":
@@ -309,6 +316,8 @@ async def convert_tool(
         output = TMP / f"unlocked-{uuid.uuid4().hex}.pdf"
     elif tool == "sign":
         output = TMP / f"signed-{uuid.uuid4().hex}.pdf"
+    elif tool == "watermark":
+        output = TMP / f"watermarked-{uuid.uuid4().hex}.pdf"
     else:
         output = TMP / f"word-pdf-{uuid.uuid4().hex}.pdf"
 
@@ -336,6 +345,7 @@ async def convert_tool(
             signature_page=signature_page,
             signature_x=signature_x,
             signature_y=signature_y,
+            watermark_text=text,
         )
     except QueueCapacityReached as exc:
         _delete_paths([*sources, output])
