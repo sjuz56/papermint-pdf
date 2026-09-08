@@ -245,9 +245,9 @@ function openTool(t) {
         <label>Rotation</label>
 
         <select name="rotation">
-          <option>90</option>
-          <option>180</option>
-          <option>270</option>
+          <option value="90">90° right</option>
+          <option value="270">90° left</option>
+          <option value="180">180°</option>
         </select>
       </div>
     `;
