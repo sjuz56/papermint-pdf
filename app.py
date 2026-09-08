@@ -8,6 +8,7 @@ from typing import List
 import os
 import shutil
 import threading
+import time
 import uuid
 
 from papermint_v28_engine import (
@@ -44,6 +45,10 @@ MAX_UPLOAD_MB = max(1, int(os.getenv("PAPERMINT_MAX_UPLOAD_MB", "50")))
 MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024
 MAX_REQUEST_MB = max(MAX_UPLOAD_MB, int(os.getenv("PAPERMINT_MAX_REQUEST_MB", "100")))
 MAX_REQUEST_BYTES = MAX_REQUEST_MB * 1024 * 1024
+TEMP_RETENTION_SECONDS = max(
+    3600,
+    int(os.getenv("PAPERMINT_TEMP_RETENTION_SECONDS", "43200")),
+)
 
 PDF_WORD_OUTPUTS = TMP / "pdf-word-results"
 PDF_WORD_OUTPUTS.mkdir(exist_ok=True)
@@ -160,9 +165,28 @@ def save_upload(upload: UploadFile) -> Path:
 
 def _delete_paths(paths) -> None:
     for path in paths:
+        if not path:
+            continue
         try:
             Path(path).unlink(missing_ok=True)
         except Exception:
+            pass
+
+
+def cleanup_stale_temp_files() -> None:
+    cutoff = time.time() - TEMP_RETENTION_SECONDS
+    try:
+        candidates = list(TMP.iterdir())
+    except OSError:
+        return
+
+    for path in candidates:
+        if not path.is_file():
+            continue
+        try:
+            if path.stat().st_mtime < cutoff:
+                path.unlink(missing_ok=True)
+        except OSError:
             pass
 
 
@@ -178,6 +202,8 @@ async def convert_tool(
     pages: str = Form(""),
     rotation: int = Form(90),
 ):
+    cleanup_stale_temp_files()
+
     # Other lightweight tools will be added here one by one after testing.
     if tool not in {"merge", "split", "compress", "word-pdf", "rotate", "organize"}:
         raise HTTPException(400, "This tool is not available yet.")
@@ -371,6 +397,7 @@ def cleanup_pdf_word_jobs() -> None:
 
 @app.post("/api/pdf-word/start")
 async def pdf_word_start(file: UploadFile = File(...)):
+    cleanup_stale_temp_files()
     cleanup_pdf_word_jobs()
 
     if not file.filename:
