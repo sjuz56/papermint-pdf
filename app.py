@@ -201,11 +201,15 @@ async def convert_tool(
     files: List[UploadFile] = File(default=[]),
     pages: str = Form(""),
     rotation: int = Form(90),
+    password: str = Form(""),
+    password_confirm: str = Form(""),
 ):
     cleanup_stale_temp_files()
 
     # Other lightweight tools will be added here one by one after testing.
-    if tool not in {"merge", "split", "compress", "word-pdf", "rotate", "organize"}:
+    if tool not in {
+        "merge", "split", "compress", "word-pdf", "rotate", "organize", "protect"
+    }:
         raise HTTPException(400, "This tool is not available yet.")
 
     if tool == "merge":
@@ -220,6 +224,7 @@ async def convert_tool(
             "word-pdf": "convert",
             "rotate": "rotate",
             "organize": "organize",
+            "protect": "protect",
         }[tool]
         file_kind = "Word file" if tool == "word-pdf" else "PDF file"
         raise HTTPException(400, f"Please upload exactly one {file_kind} to {action}.")
@@ -232,6 +237,14 @@ async def convert_tool(
         elif suffix != ".pdf":
             raise HTTPException(400, "This tool accepts PDF files only.")
 
+    if tool == "protect":
+        if password != password_confirm:
+            raise HTTPException(400, "Passwords do not match.")
+        if len(password) < 6:
+            raise HTTPException(400, "Password must contain at least 6 characters.")
+        if len(password) > 128:
+            raise HTTPException(400, "Password can contain at most 128 characters.")
+
     sources: List[Path] = []
     if tool == "merge":
         output = TMP / f"merged-{uuid.uuid4().hex}.pdf"
@@ -243,6 +256,8 @@ async def convert_tool(
         output = TMP / f"rotated-{uuid.uuid4().hex}.pdf"
     elif tool == "organize":
         output = TMP / f"organized-{uuid.uuid4().hex}.pdf"
+    elif tool == "protect":
+        output = TMP / f"protected-{uuid.uuid4().hex}.pdf"
     else:
         output = TMP / f"word-pdf-{uuid.uuid4().hex}.pdf"
 
@@ -265,6 +280,7 @@ async def convert_tool(
             output,
             pages=pages,
             rotation=rotation,
+            password=password,
         )
     except QueueCapacityReached as exc:
         _delete_paths([*sources, output])

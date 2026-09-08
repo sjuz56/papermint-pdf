@@ -202,7 +202,44 @@ function openTool(t) {
     `;
   }
 
-  if (['protect', 'unlock'].includes(t.id)) {
+  if (t.id === 'protect') {
+    x += `
+      <div class="field">
+        <label>Password</label>
+        <input
+          name="password"
+          type="password"
+          placeholder="At least 6 characters"
+          minlength="6"
+          maxlength="128"
+          autocomplete="new-password"
+          required
+        >
+      </div>
+
+      <div class="field">
+        <label>Confirm password</label>
+        <input
+          name="password_confirm"
+          type="password"
+          placeholder="Enter the password again"
+          minlength="6"
+          maxlength="128"
+          autocomplete="new-password"
+          required
+        >
+      </div>
+
+      <div class="field">
+        <small>
+          The protected PDF will require this password every time it is opened.
+          The password is used only for this protection job.
+        </small>
+      </div>
+    `;
+  }
+
+  if (t.id === 'unlock') {
     x += field(
       'Password',
       'password',
@@ -389,6 +426,21 @@ if (form) {
     s.textContent = 'Processing…';
 
     try {
+      if (tool === 'protect') {
+        const password = fd.get('password') || '';
+        const confirmation = fd.get('password_confirm') || '';
+
+        if (password.length < 6) {
+          throw new Error(
+            'Password must contain at least 6 characters.'
+          );
+        }
+
+        if (password !== confirmation) {
+          throw new Error('Passwords do not match.');
+        }
+      }
+
       // =========================================
       // PDF -> WORD
       // =========================================

@@ -18,6 +18,7 @@ from papermint_compress_engine import CompressError, compress_pdf
 from papermint_word_pdf_engine import WordPdfError, word_to_pdf
 from papermint_rotate_engine import RotateError, rotate_pdf
 from papermint_organize_engine import OrganizeError, organize_pdf
+from papermint_protect_engine import ProtectError, protect_pdf
 
 
 QUEUE_NAME = os.getenv("PAPERMINT_QUEUE_NAME", "papermint")
@@ -42,6 +43,7 @@ KNOWN_TOOL_ERRORS = (
     WordPdfError,
     RotateError,
     OrganizeError,
+    ProtectError,
 )
 
 
@@ -72,6 +74,7 @@ def enqueue_tool_job(
     *,
     pages: str = "",
     rotation: int = 90,
+    password: str = "",
 ) -> dict:
     """Add one bounded background job and return its public identifier."""
     connection, queue = queue_connection()
@@ -97,6 +100,7 @@ def enqueue_tool_job(
                 "output": output_path,
                 "pages": pages,
                 "rotation": rotation,
+                "password": password,
             },
             timeout=JOB_TIMEOUT,
             ttl=JOB_TTL,
@@ -134,6 +138,7 @@ def process_tool_job(
     output: str,
     pages: str = "",
     rotation: int = 90,
+    password: str = "",
 ) -> dict:
     """Execute one job inside an RQ worker process."""
     job = get_current_job()
@@ -166,6 +171,10 @@ def process_tool_job(
             report = organize_pdf(sources[0], output, pages)
             download_name = "organized.pdf"
             media_type = "application/pdf"
+        elif tool == "protect":
+            report = protect_pdf(sources[0], output, password)
+            download_name = "protected.pdf"
+            media_type = "application/pdf"
         else:
             raise RuntimeError("Unsupported queued tool.")
     except KNOWN_TOOL_ERRORS as exc:
@@ -178,6 +187,17 @@ def process_tool_job(
             job.meta["public_error"] = "The document could not be processed."
             job.save_meta()
         raise
+    finally:
+        # The password is needed only while queued/running. Remove it from the
+        # persisted RQ job data immediately after processing finishes.
+        if job and password:
+            try:
+                clean_kwargs = dict(job.kwargs or {})
+                clean_kwargs["password"] = ""
+                job.kwargs = clean_kwargs
+                job.save()
+            except Exception:
+                pass
 
     return {
         "ok": True,
