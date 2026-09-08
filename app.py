@@ -22,6 +22,13 @@ from papermint_compress_engine import CompressError, compress_pdf
 from papermint_word_pdf_engine import WordPdfError, word_to_pdf
 from papermint_rotate_engine import RotateError, rotate_pdf
 from papermint_organize_engine import OrganizeError, organize_pdf
+from papermint_job_queue import (
+    QueueCapacityReached,
+    QueueUnavailable,
+    enqueue_tool_job,
+    fetch_job,
+    public_job_status,
+)
 
 
 # ============================================================
@@ -196,44 +203,76 @@ async def convert_tool(
         for upload in files:
             sources.append(save_upload(upload))
 
-        if tool == "merge":
-            await run_in_threadpool(merge_pdfs, sources, output)
-        elif tool == "split":
-            await run_in_threadpool(split_pdf, sources[0], output, pages)
-        elif tool == "compress":
-            await run_in_threadpool(compress_pdf, sources[0], output)
-        elif tool == "rotate":
-            await run_in_threadpool(rotate_pdf, sources[0], output, rotation)
-        elif tool == "organize":
-            await run_in_threadpool(organize_pdf, sources[0], output, pages)
-        else:
-            await run_in_threadpool(word_to_pdf, sources[0], output)
-    except (
-        MergeError,
-        SplitError,
-        CompressError,
-        WordPdfError,
-        RotateError,
-        OrganizeError,
-    ) as exc:
+        queued = await run_in_threadpool(
+            enqueue_tool_job,
+            tool,
+            sources,
+            output,
+            pages=pages,
+            rotation=rotation,
+        )
+    except QueueCapacityReached as exc:
         _delete_paths([*sources, output])
-        raise HTTPException(400, str(exc))
+        raise HTTPException(429, str(exc))
+    except QueueUnavailable as exc:
+        _delete_paths([*sources, output])
+        raise HTTPException(503, str(exc))
+    except HTTPException:
+        _delete_paths([*sources, output])
+        raise
     except Exception as exc:
         _delete_paths([*sources, output])
-        raise HTTPException(500, f"PDF operation failed: {exc}")
+        raise HTTPException(500, f"Could not queue the PDF operation: {exc}")
 
+    return queued
+
+
+@app.get("/api/jobs/status/{job_id}")
+def queued_job_status(job_id: str):
+    try:
+        job = fetch_job(job_id)
+        status = public_job_status(job)
+    except KeyError:
+        raise HTTPException(404, "Processing job not found.")
+    except QueueUnavailable as exc:
+        raise HTTPException(503, str(exc))
+
+    if status["status"] == "error":
+        kwargs = job.kwargs or {}
+        _delete_paths([*(kwargs.get("sources") or []), kwargs.get("output")])
+
+    return status
+
+
+@app.get("/api/jobs/download/{job_id}")
+def queued_job_download(job_id: str):
+    try:
+        job = fetch_job(job_id)
+        status = public_job_status(job)
+    except KeyError:
+        raise HTTPException(404, "Processing job not found.")
+    except QueueUnavailable as exc:
+        raise HTTPException(503, str(exc))
+
+    if status["status"] == "error":
+        raise HTTPException(400, status.get("error") or "Processing failed.")
+    if status["status"] != "done":
+        raise HTTPException(409, "The document is not ready yet.")
+
+    result = job.return_value(refresh=True)
+    if not isinstance(result, dict) or not result.get("ok"):
+        raise HTTPException(500, "The processing result is missing.")
+
+    output = Path(result.get("output") or "")
+    if not output.is_file():
+        raise HTTPException(404, "The processed file has expired.")
+
+    cleanup_paths = [*(result.get("sources") or []), output]
     return FileResponse(
         path=str(output),
-        media_type="application/zip" if tool == "split" else "application/pdf",
-        filename={
-            "merge": "merged.pdf",
-            "split": "split.zip",
-            "compress": "compressed.pdf",
-            "word-pdf": "converted.pdf",
-            "rotate": "rotated.pdf",
-            "organize": "organized.pdf",
-        }[tool],
-        background=BackgroundTask(_delete_paths, [*sources, output]),
+        media_type=result.get("media_type") or "application/octet-stream",
+        filename=result.get("download_name") or output.name,
+        background=BackgroundTask(_delete_paths, cleanup_paths),
     )
 
 
