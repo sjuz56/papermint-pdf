@@ -202,6 +202,17 @@ function openTool(t) {
     `;
   }
 
+  if (t.id === 'pdf-ppt') {
+    x += `
+      <div class="field">
+        <small>
+          Each PDF page becomes one sharp PowerPoint slide.
+          The original appearance is preserved, but page content is not editable text.
+        </small>
+      </div>
+    `;
+  }
+
   if (t.id === 'protect') {
     x += `
       <div class="field">
