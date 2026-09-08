@@ -229,12 +229,12 @@ function openTool(t) {
   if (['split', 'organize'].includes(t.id)) {
     x += field(
       t.id === 'organize'
-        ? 'Page order'
+        ? 'New page order'
         : 'Pages / ranges',
       'pages',
       'text',
       t.id === 'organize'
-        ? '3,1,2'
+        ? '3,1,2 or 5-3'
         : '1-3,5'
     );
   }
