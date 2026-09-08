@@ -336,13 +336,41 @@ function openTool(t) {
   }
 
   if (t.id === 'page-numbers') {
-    x += field(
-      'Start number',
-      'page_number_start',
-      'number',
-      '1',
-      '1'
-    );
+    x += `
+      <div class="field">
+        <label>Start number</label>
+        <input name="page_number_start" type="number" value="1" min="0" max="1000000" required>
+      </div>
+
+      <div class="field">
+        <label>Format</label>
+        <select name="page_number_format">
+          <option value="number">1</option>
+          <option value="page">Page 1</option>
+          <option value="page-total">Page 1 of 10</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label>Position</label>
+        <select name="page_number_position">
+          <option value="bottom-center">Bottom center</option>
+          <option value="bottom-left">Bottom left</option>
+          <option value="bottom-right">Bottom right</option>
+          <option value="top-center">Top center</option>
+          <option value="top-left">Top left</option>
+          <option value="top-right">Top right</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label>Cover page</label>
+        <label style="display:flex;align-items:center;gap:8px;font-weight:400">
+          <input name="page_number_skip_first" type="checkbox" value="true" style="width:auto;padding:0;margin:0">
+          <span>Skip the first page</span>
+        </label>
+      </div>
+    `;
   }
 
   if (t.id === 'sign') {
