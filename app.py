@@ -49,6 +49,24 @@ TEMP_RETENTION_SECONDS = max(
     3600,
     int(os.getenv("PAPERMINT_TEMP_RETENTION_SECONDS", "43200")),
 )
+RESULT_RETENTION_SECONDS = max(
+    300,
+    int(os.getenv("PAPERMINT_RESULT_RETENTION_SECONDS", "1800")),
+)
+JANITOR_INTERVAL_SECONDS = max(
+    30,
+    int(os.getenv("PAPERMINT_JANITOR_INTERVAL_SECONDS", "60")),
+)
+RESULT_FILE_PREFIXES = (
+    "merged-",
+    "split-",
+    "compressed-",
+    "word-pdf-",
+    "rotated-",
+    "organized-",
+    "protected-",
+    "unlocked-",
+)
 
 PDF_WORD_OUTPUTS = TMP / "pdf-word-results"
 PDF_WORD_OUTPUTS.mkdir(exist_ok=True)
@@ -130,6 +148,8 @@ PDF_WORD_MANAGER = V28JobManager(
 # lifecycle lives inside V28JobManager.
 PDF_WORD_META = {}
 PDF_WORD_META_LOCK = threading.RLock()
+JANITOR_STOP = threading.Event()
+JANITOR_THREAD = None
 
 
 def save_upload(upload: UploadFile) -> Path:
@@ -174,7 +194,7 @@ def _delete_paths(paths) -> None:
 
 
 def cleanup_stale_temp_files() -> None:
-    cutoff = time.time() - TEMP_RETENTION_SECONDS
+    now = time.time()
     try:
         candidates = list(TMP.iterdir())
     except OSError:
@@ -184,7 +204,12 @@ def cleanup_stale_temp_files() -> None:
         if not path.is_file():
             continue
         try:
-            if path.stat().st_mtime < cutoff:
+            retention = (
+                RESULT_RETENTION_SECONDS
+                if path.name.startswith(RESULT_FILE_PREFIXES)
+                else TEMP_RETENTION_SECONDS
+            )
+            if path.stat().st_mtime < now - retention:
                 path.unlink(missing_ok=True)
         except OSError:
             pass
@@ -415,6 +440,27 @@ def cleanup_pdf_word_jobs() -> None:
             _delete_source_for_job(job_id)
 
 
+def cleanup_janitor_loop() -> None:
+    while not JANITOR_STOP.wait(JANITOR_INTERVAL_SECONDS):
+        cleanup_stale_temp_files()
+        cleanup_pdf_word_jobs()
+
+
+@app.on_event("startup")
+def start_cleanup_janitor():
+    global JANITOR_THREAD
+    cleanup_stale_temp_files()
+    cleanup_pdf_word_jobs()
+    JANITOR_STOP.clear()
+    if JANITOR_THREAD is None or not JANITOR_THREAD.is_alive():
+        JANITOR_THREAD = threading.Thread(
+            target=cleanup_janitor_loop,
+            name="papermint-file-janitor",
+            daemon=True,
+        )
+        JANITOR_THREAD.start()
+
+
 # ============================================================
 # ASYNC PDF -> WORD API
 # ============================================================
@@ -545,6 +591,9 @@ def pdf_word_download(job_id: str):
 
 @app.on_event("shutdown")
 def shutdown_pdf_word_manager():
+    JANITOR_STOP.set()
+    if JANITOR_THREAD is not None:
+        JANITOR_THREAD.join(timeout=2.0)
     try:
         PDF_WORD_MANAGER.shutdown()
     except Exception:

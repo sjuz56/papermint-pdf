@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+import threading
 from typing import Iterable
 
 from redis import Redis
@@ -27,6 +28,10 @@ QUEUE_MAX_WAITING = max(1, int(os.getenv("PAPERMINT_QUEUE_MAX_WAITING", "20")))
 JOB_TIMEOUT = max(60, int(os.getenv("PAPERMINT_TOOL_JOB_TIMEOUT", "600")))
 JOB_TTL = max(JOB_TIMEOUT, int(os.getenv("PAPERMINT_TOOL_JOB_TTL", "3600")))
 RESULT_TTL = max(300, int(os.getenv("PAPERMINT_TOOL_RESULT_TTL", "3600")))
+RESULT_FILE_RETENTION_SECONDS = max(
+    300,
+    int(os.getenv("PAPERMINT_RESULT_RETENTION_SECONDS", "1800")),
+)
 
 
 class QueueUnavailable(RuntimeError):
@@ -47,6 +52,26 @@ KNOWN_TOOL_ERRORS = (
     ProtectError,
     UnlockError,
 )
+
+
+def _delete_files(paths: Iterable[str | Path]) -> None:
+    for path in paths:
+        if not path:
+            continue
+        try:
+            Path(path).unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
+def _schedule_result_cleanup(output: str | Path) -> None:
+    timer = threading.Timer(
+        RESULT_FILE_RETENTION_SECONDS,
+        _delete_files,
+        args=([output],),
+    )
+    timer.daemon = True
+    timer.start()
 
 
 def redis_connection() -> Redis:
@@ -148,6 +173,7 @@ def process_tool_job(
         job.meta["public_status"] = "processing"
         job.save_meta()
 
+    succeeded = False
     try:
         if tool == "merge":
             report = merge_pdfs(sources, output)
@@ -183,17 +209,26 @@ def process_tool_job(
             media_type = "application/pdf"
         else:
             raise RuntimeError("Unsupported queued tool.")
+        succeeded = True
     except KNOWN_TOOL_ERRORS as exc:
         if job:
             job.meta["public_error"] = str(exc)
             job.save_meta()
+        _delete_files([*sources, output])
         raise
     except Exception:
         if job:
             job.meta["public_error"] = "The document could not be processed."
             job.save_meta()
+        _delete_files([*sources, output])
         raise
     finally:
+        if succeeded:
+            # The uploaded originals are no longer needed once the result exists.
+            _delete_files(sources)
+            # Keep only the downloadable result, and only for a short window.
+            _schedule_result_cleanup(output)
+
         # The password is needed only while queued/running. Remove it from the
         # persisted RQ job data immediately after processing finishes.
         if job and password:
@@ -208,7 +243,7 @@ def process_tool_job(
     return {
         "ok": True,
         "tool": tool,
-        "sources": sources,
+        "sources": [],
         "output": output,
         "download_name": download_name,
         "media_type": media_type,
