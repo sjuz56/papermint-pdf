@@ -12,3 +12,5 @@ pdfplumber
 pytesseract
 weasyprint
 pdf2docx
+redis>=5,<7
+rq>=2,<3
