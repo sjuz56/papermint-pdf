@@ -70,6 +70,18 @@ RESULT_FILE_PREFIXES = (
     "watermarked-",
     "numbered-",
     "pdf-ppt-",
+    "pdf-excel-",
+    "pdf-jpg-",
+    "ppt-pdf-",
+    "excel-pdf-",
+    "image-pdf-",
+    "html-pdf-",
+    "pdfa-",
+    "repaired-",
+    "ocr-",
+    "comparison-",
+    "redacted-",
+    "cropped-",
 )
 
 PDF_WORD_OUTPUTS = TMP / "pdf-word-results"
@@ -103,11 +115,11 @@ TOOLS = [
     ("unlock", "Unlock PDF", "Remove password protection when you know the password."),
     ("protect", "Protect PDF", "Encrypt a PDF with a password."),
     ("organize", "Organize PDF", "Reorder pages using a page list such as 3,1,2."),
-    ("pdfa", "PDF to PDF/A", "Create an archival-style PDF copy."),
+    ("pdfa", "PDF to PDF/A", "Create a standards-oriented PDF/A-2b archival copy."),
     ("repair", "Repair PDF", "Rewrite a damaged/readable PDF into a fresh file."),
     ("page-numbers", "Page numbers", "Add page numbers to every page."),
     ("scan-pdf", "Scan to PDF", "Convert phone scans/images into a PDF."),
-    ("ocr", "OCR PDF", "Recognize text from scanned PDF pages."),
+    ("ocr", "OCR PDF", "Recognize English text from scanned PDF pages into Word."),
     ("compare", "Compare PDF", "Create a text difference report for two PDFs."),
     ("redact", "Redact PDF", "Search and permanently redact specified text."),
     ("crop", "Crop PDF", "Crop all pages by margins in millimeters."),
@@ -240,13 +252,16 @@ async def convert_tool(
     page_number_position: str = Form("bottom-center"),
     page_number_format: str = Form("number"),
     page_number_skip_first: bool = Form(False),
+    margin: float = Form(10.0),
 ):
     cleanup_stale_temp_files()
 
-    # Other lightweight tools will be added here one by one after testing.
     if tool not in {
         "merge", "split", "compress", "word-pdf", "rotate", "organize",
-        "protect", "unlock", "sign", "watermark", "page-numbers", "pdf-ppt"
+        "protect", "unlock", "sign", "watermark", "page-numbers", "pdf-ppt",
+        "pdf-excel", "pdf-jpg", "ppt-pdf", "excel-pdf", "jpg-pdf",
+        "html-pdf", "pdfa", "repair", "scan-pdf", "ocr", "compare",
+        "redact", "crop",
     }:
         raise HTTPException(400, "This tool is not available yet.")
 
@@ -255,6 +270,14 @@ async def convert_tool(
             raise HTTPException(400, "Please upload at least two PDF files.")
         if len(files) > 25:
             raise HTTPException(400, "You can merge up to 25 PDF files at once.")
+    elif tool == "compare":
+        if len(files) != 2:
+            raise HTTPException(400, "Please upload exactly two PDF files to compare.")
+    elif tool in {"jpg-pdf", "scan-pdf"}:
+        if not files:
+            raise HTTPException(400, "Please upload at least one image.")
+        if len(files) > 100:
+            raise HTTPException(400, "You can combine up to 100 images at once.")
     elif len(files) != 1:
         action = {
             "split": "split",
@@ -268,8 +291,23 @@ async def convert_tool(
             "watermark": "watermark",
             "page-numbers": "number",
             "pdf-ppt": "convert",
+            "pdf-excel": "convert",
+            "pdf-jpg": "convert",
+            "ppt-pdf": "convert",
+            "excel-pdf": "convert",
+            "html-pdf": "convert",
+            "pdfa": "convert",
+            "repair": "repair",
+            "ocr": "recognize",
+            "redact": "redact",
+            "crop": "crop",
         }[tool]
-        file_kind = "Word file" if tool == "word-pdf" else "PDF file"
+        file_kind = {
+            "word-pdf": "Word file",
+            "ppt-pdf": "PowerPoint file",
+            "excel-pdf": "Excel file",
+            "html-pdf": "HTML file",
+        }.get(tool, "PDF file")
         raise HTTPException(400, f"Please upload exactly one {file_kind} to {action}.")
 
     for upload in files:
@@ -277,6 +315,18 @@ async def convert_tool(
         if tool == "word-pdf":
             if suffix not in {".doc", ".docx"}:
                 raise HTTPException(400, "Word to PDF accepts DOC and DOCX files only.")
+        elif tool == "ppt-pdf":
+            if suffix not in {".ppt", ".pptx"}:
+                raise HTTPException(400, "PowerPoint to PDF accepts PPT and PPTX files only.")
+        elif tool == "excel-pdf":
+            if suffix not in {".xls", ".xlsx"}:
+                raise HTTPException(400, "Excel to PDF accepts XLS and XLSX files only.")
+        elif tool in {"jpg-pdf", "scan-pdf"}:
+            if suffix not in {".jpg", ".jpeg", ".png", ".webp", ".tif", ".tiff"}:
+                raise HTTPException(400, "This tool accepts JPG, PNG, WebP and TIFF images.")
+        elif tool == "html-pdf":
+            if suffix not in {".html", ".htm"}:
+                raise HTTPException(400, "HTML to PDF accepts HTML and HTM files only.")
         elif suffix != ".pdf":
             raise HTTPException(400, "This tool accepts PDF files only.")
 
@@ -316,6 +366,14 @@ async def convert_tool(
             raise HTTPException(400, "Choose a valid page-number position.")
         if page_number_format not in {"number", "page", "page-total"}:
             raise HTTPException(400, "Choose a valid page-number format.")
+    elif tool == "redact":
+        if not text.strip():
+            raise HTTPException(400, "Please enter the text to redact.")
+        if len(text.strip()) > 200:
+            raise HTTPException(400, "Redaction text can contain at most 200 characters.")
+    elif tool == "crop":
+        if margin < 0 or margin > 100:
+            raise HTTPException(400, "Crop margin must be between 0 and 100 mm.")
 
     sources: List[Path] = []
     if tool == "merge":
@@ -340,6 +398,30 @@ async def convert_tool(
         output = TMP / f"numbered-{uuid.uuid4().hex}.pdf"
     elif tool == "pdf-ppt":
         output = TMP / f"pdf-ppt-{uuid.uuid4().hex}.pptx"
+    elif tool == "pdf-excel":
+        output = TMP / f"pdf-excel-{uuid.uuid4().hex}.xlsx"
+    elif tool == "pdf-jpg":
+        output = TMP / f"pdf-jpg-{uuid.uuid4().hex}.zip"
+    elif tool == "ppt-pdf":
+        output = TMP / f"ppt-pdf-{uuid.uuid4().hex}.pdf"
+    elif tool == "excel-pdf":
+        output = TMP / f"excel-pdf-{uuid.uuid4().hex}.pdf"
+    elif tool in {"jpg-pdf", "scan-pdf"}:
+        output = TMP / f"image-pdf-{uuid.uuid4().hex}.pdf"
+    elif tool == "html-pdf":
+        output = TMP / f"html-pdf-{uuid.uuid4().hex}.pdf"
+    elif tool == "pdfa":
+        output = TMP / f"pdfa-{uuid.uuid4().hex}.pdf"
+    elif tool == "repair":
+        output = TMP / f"repaired-{uuid.uuid4().hex}.pdf"
+    elif tool == "ocr":
+        output = TMP / f"ocr-{uuid.uuid4().hex}.docx"
+    elif tool == "compare":
+        output = TMP / f"comparison-{uuid.uuid4().hex}.txt"
+    elif tool == "redact":
+        output = TMP / f"redacted-{uuid.uuid4().hex}.pdf"
+    elif tool == "crop":
+        output = TMP / f"cropped-{uuid.uuid4().hex}.pdf"
     else:
         output = TMP / f"word-pdf-{uuid.uuid4().hex}.pdf"
 
@@ -372,6 +454,8 @@ async def convert_tool(
             page_number_position=page_number_position,
             page_number_format=page_number_format,
             page_number_skip_first=page_number_skip_first,
+            redaction_text=text,
+            crop_margin=margin,
         )
     except QueueCapacityReached as exc:
         _delete_paths([*sources, output])

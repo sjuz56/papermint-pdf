@@ -9,6 +9,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         libreoffice-writer \
+        libreoffice-impress \
+        libreoffice-calc \
+        ghostscript \
+        tesseract-ocr \
+        tesseract-ocr-eng \
         fonts-crosextra-caladea \
         fonts-crosextra-carlito \
         fonts-dejavu-core \

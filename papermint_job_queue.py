@@ -25,6 +25,27 @@ from papermint_sign_engine import SignError, sign_pdf
 from papermint_watermark_engine import WatermarkError, watermark_pdf
 from papermint_page_numbers_engine import PageNumbersError, add_page_numbers
 from papermint_pdf_ppt_engine import PdfPowerPointError, pdf_to_powerpoint
+from papermint_extra_engines import (
+    CompareError,
+    HtmlPdfError,
+    ImagePdfError,
+    OcrError,
+    OfficePdfError,
+    PdfExcelError,
+    PdfJpgError,
+    PdfMaintenanceError,
+    compare_pdfs,
+    crop_pdf,
+    html_to_pdf,
+    images_to_pdf,
+    ocr_pdf,
+    office_to_pdf,
+    pdf_to_excel,
+    pdf_to_jpg_zip,
+    pdf_to_pdfa,
+    redact_pdf,
+    repair_pdf,
+)
 
 
 QUEUE_NAME = os.getenv("PAPERMINT_QUEUE_NAME", "papermint")
@@ -59,6 +80,14 @@ KNOWN_TOOL_ERRORS = (
     WatermarkError,
     PageNumbersError,
     PdfPowerPointError,
+    PdfExcelError,
+    PdfJpgError,
+    OfficePdfError,
+    ImagePdfError,
+    HtmlPdfError,
+    PdfMaintenanceError,
+    OcrError,
+    CompareError,
 )
 
 
@@ -119,6 +148,8 @@ def enqueue_tool_job(
     page_number_position: str = "bottom-center",
     page_number_format: str = "number",
     page_number_skip_first: bool = False,
+    redaction_text: str = "",
+    crop_margin: float = 10.0,
 ) -> dict:
     """Add one bounded background job and return its public identifier."""
     connection, queue = queue_connection()
@@ -154,6 +185,8 @@ def enqueue_tool_job(
                 "page_number_position": page_number_position,
                 "page_number_format": page_number_format,
                 "page_number_skip_first": page_number_skip_first,
+                "redaction_text": redaction_text,
+                "crop_margin": crop_margin,
             },
             timeout=JOB_TIMEOUT,
             ttl=JOB_TTL,
@@ -201,6 +234,8 @@ def process_tool_job(
     page_number_position: str = "bottom-center",
     page_number_format: str = "number",
     page_number_skip_first: bool = False,
+    redaction_text: str = "",
+    crop_margin: float = 10.0,
 ) -> dict:
     """Execute one job inside an RQ worker process."""
     job = get_current_job()
@@ -274,6 +309,50 @@ def process_tool_job(
             media_type = (
                 "application/vnd.openxmlformats-officedocument.presentationml.presentation"
             )
+        elif tool == "pdf-excel":
+            report = pdf_to_excel(sources[0], output)
+            download_name = "converted.xlsx"
+            media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        elif tool == "pdf-jpg":
+            report = pdf_to_jpg_zip(sources[0], output)
+            download_name = "jpg-pages.zip"
+            media_type = "application/zip"
+        elif tool in {"ppt-pdf", "excel-pdf"}:
+            report = office_to_pdf(sources[0], output, tool)
+            download_name = "converted.pdf"
+            media_type = "application/pdf"
+        elif tool in {"jpg-pdf", "scan-pdf"}:
+            report = images_to_pdf(sources, output, scan_mode=tool == "scan-pdf")
+            download_name = "scans.pdf" if tool == "scan-pdf" else "images.pdf"
+            media_type = "application/pdf"
+        elif tool == "html-pdf":
+            report = html_to_pdf(sources[0], output)
+            download_name = "converted.pdf"
+            media_type = "application/pdf"
+        elif tool == "pdfa":
+            report = pdf_to_pdfa(sources[0], output)
+            download_name = "archive.pdf"
+            media_type = "application/pdf"
+        elif tool == "repair":
+            report = repair_pdf(sources[0], output)
+            download_name = "repaired.pdf"
+            media_type = "application/pdf"
+        elif tool == "ocr":
+            report = ocr_pdf(sources[0], output)
+            download_name = "ocr.docx"
+            media_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        elif tool == "compare":
+            report = compare_pdfs(sources, output)
+            download_name = "comparison.txt"
+            media_type = "text/plain; charset=utf-8"
+        elif tool == "redact":
+            report = redact_pdf(sources[0], output, redaction_text)
+            download_name = "redacted.pdf"
+            media_type = "application/pdf"
+        elif tool == "crop":
+            report = crop_pdf(sources[0], output, crop_margin)
+            download_name = "cropped.pdf"
+            media_type = "application/pdf"
         else:
             raise RuntimeError("Unsupported queued tool.")
         succeeded = True
@@ -298,12 +377,13 @@ def process_tool_job(
 
         # The password is needed only while queued/running. Remove it from the
         # persisted RQ job data immediately after processing finishes.
-        if job and (password or signature_text or watermark_text):
+        if job and (password or signature_text or watermark_text or redaction_text):
             try:
                 clean_kwargs = dict(job.kwargs or {})
                 clean_kwargs["password"] = ""
                 clean_kwargs["signature_text"] = ""
                 clean_kwargs["watermark_text"] = ""
+                clean_kwargs["redaction_text"] = ""
                 job.kwargs = clean_kwargs
                 job.save()
             except Exception:

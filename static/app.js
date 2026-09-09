@@ -4,8 +4,18 @@ let selectedFiles = [];
 const multiFileTools = new Set([
   'merge',
   'jpg-pdf',
+  'scan-pdf',
   'compare'
 ]);
+
+const acceptedFiles = {
+  'word-pdf': '.doc,.docx',
+  'ppt-pdf': '.ppt,.pptx',
+  'excel-pdf': '.xls,.xlsx',
+  'jpg-pdf': '.jpg,.jpeg,.png,.webp,.tif,.tiff,image/jpeg,image/png,image/webp,image/tiff',
+  'scan-pdf': '.jpg,.jpeg,.png,.webp,.tif,.tiff,image/jpeg,image/png,image/webp,image/tiff',
+  'html-pdf': '.html,.htm,text/html'
+};
 
 const labels = {
   merge: 'MERGE',
@@ -179,6 +189,7 @@ function openTool(t) {
 
   fileInput.value = '';
   fileInput.multiple = multiFileTools.has(t.id);
+  fileInput.accept = acceptedFiles[t.id] || '.pdf,application/pdf';
 
   renderSelectedFiles();
 
@@ -211,6 +222,22 @@ function openTool(t) {
         </small>
       </div>
     `;
+  }
+
+  if (t.id === 'pdf-jpg') {
+    x += `<div class="field"><small>Downloads all pages as numbered JPG files in one ZIP archive.</small></div>`;
+  }
+
+  if (t.id === 'ocr') {
+    x += `<div class="field"><small>Recognizes English text in scanned pages and creates an editable Word document.</small></div>`;
+  }
+
+  if (t.id === 'html-pdf') {
+    x += `<div class="field"><small>For privacy and security, external images, stylesheets and web fonts are not downloaded.</small></div>`;
+  }
+
+  if (t.id === 'pdfa') {
+    x += `<div class="field"><small>Creates a PDF/A-2b archival document with an embedded sRGB output profile.</small></div>`;
   }
 
   if (t.id === 'protect') {
@@ -525,6 +552,14 @@ if (form) {
 
       if (tool === 'watermark' && !(fd.get('text') || '').trim()) {
         throw new Error('Please enter the watermark text.');
+      }
+
+      if (tool === 'redact' && !(fd.get('text') || '').trim()) {
+        throw new Error('Please enter the text to redact.');
+      }
+
+      if (!selectedFiles.length) {
+        throw new Error('Please choose a file.');
       }
 
       // =========================================

@@ -2,6 +2,8 @@
 
 Functional local prototype of a multi-tool PDF web app.
 
+Planned subscription price: **€7/month** or **€60/year**.
+
 ## Run
 
 ```bash
@@ -26,8 +28,7 @@ Word objects such as positioned images.
 
 ## Background processing and overload protection
 
-Merge, split, compress, PDF→PowerPoint, Word→PDF, rotate, organize, protect,
-unlock, sign, watermark and page-number jobs
+All tools except the dedicated PDF→Word V28 pipeline
 are placed in a bounded Redis/RQ queue. One background worker processes one of
 these jobs at a time while
 the web process remains responsive. Up to 20 jobs may wait; additional submissions
@@ -48,13 +49,13 @@ Redis plus shared temporary object storage.
 
 ## Implemented tools
 
-Merge, split/ranges, compress, PDF→Word (Visual 1:1 + Editable), PDF→PowerPoint, PDF→Excel, PDF→JPG, Word/PPT/Excel→PDF via LibreOffice, JPG→PDF, text signature, watermark, rotate, HTML→PDF, unlock, protect, organize/reorder, repair/rewrite, archival copy, page numbers, scan images→PDF, OCR→DOCX, text compare, text redaction, crop.
+Merge, split/ranges, compress, editable PDF→Word, PDF→PowerPoint, PDF→Excel, PDF→JPG ZIP, Word/PPT/Excel→PDF via LibreOffice, JPG/images→PDF, text signature, watermark, rotate, HTML→PDF, unlock, protect, organize/reorder, repair/rewrite, PDF/A-2b, page numbers, enhanced scan images→PDF, English OCR→DOCX, text compare, permanent text redaction, crop.
 
 ## Important production notes
 
 This is a functional MVP, not yet a hardened public SaaS. Before public launch add rate limiting, malware scanning, page limits, encrypted storage, logging/monitoring, legal/privacy pages, billing, and sandboxed document conversion workers.
 
-`Visual 1:1` PDF→Word preserves visual appearance by placing high-resolution page renders into DOCX pages. It is visually faithful but the page body itself is not fully editable. `Editable` extracts text into normal Word paragraphs and is therefore more editable but less layout-perfect.
+PDF→Word creates an editable DOCX and preserves the original layout as closely as the source permits.
 
 PDF→PowerPoint creates one high-resolution page image per slide. It preserves the
 PDF appearance and page proportions, but the content inside the page image is not
