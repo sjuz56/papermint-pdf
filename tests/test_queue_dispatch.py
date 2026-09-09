@@ -27,7 +27,7 @@ class QueueDispatchTests(unittest.TestCase):
             ("html-pdf", "html_to_pdf", {}),
             ("pdfa", "pdf_to_pdfa", {}),
             ("repair", "repair_pdf", {}),
-            ("ocr", "ocr_pdf", {}),
+            ("ocr", "ocr_pdf", {"ocr_language": "ces"}),
             ("compare", "compare_pdfs", {}),
             ("redact", "redact_pdf", {"redaction_text": "secret"}),
             ("crop", "crop_pdf", {"crop_margin": 7.0}),

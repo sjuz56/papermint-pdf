@@ -14,6 +14,23 @@ RUN apt-get update \
         ghostscript \
         tesseract-ocr \
         tesseract-ocr-eng \
+        tesseract-ocr-ces \
+        tesseract-ocr-slk \
+        tesseract-ocr-deu \
+        tesseract-ocr-spa \
+        tesseract-ocr-fra \
+        tesseract-ocr-ita \
+        tesseract-ocr-por \
+        tesseract-ocr-pol \
+        tesseract-ocr-ron \
+        tesseract-ocr-rus \
+        tesseract-ocr-ukr \
+        tesseract-ocr-chi-sim \
+        tesseract-ocr-chi-tra \
+        tesseract-ocr-hin \
+        tesseract-ocr-jpn \
+        tesseract-ocr-kor \
+        tesseract-ocr-ara \
         fonts-crosextra-caladea \
         fonts-crosextra-carlito \
         fonts-dejavu-core \

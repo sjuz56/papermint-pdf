@@ -4,6 +4,7 @@ from pathlib import Path
 import shutil
 import tempfile
 import unittest
+from unittest.mock import patch
 from zipfile import ZipFile
 
 import fitz
@@ -116,6 +117,22 @@ class ExtraEngineTests(unittest.TestCase):
         self.assertEqual(report["pages"], 2)
         document = Document(output)
         self.assertTrue(document.paragraphs)
+
+    def test_non_english_ocr_language_is_forwarded(self):
+        output = self.temp_dir / "ocr-czech.docx"
+        with (
+            patch("papermint_extra_engines.shutil.which", return_value="/usr/bin/tesseract"),
+            patch("papermint_extra_engines.pytesseract.get_languages", return_value=["ces"]),
+            patch(
+                "papermint_extra_engines.pytesseract.image_to_string",
+                return_value="Příliš žluťoučký kůň",
+            ) as recognize,
+        ):
+            report = ocr_pdf(self.pdf_a, output, language="ces")
+        self.assertEqual(report["language"], "ces")
+        self.assertEqual(recognize.call_args.kwargs["lang"], "ces")
+        document = Document(output)
+        self.assertIn("Příliš žluťoučký kůň", "\n".join(p.text for p in document.paragraphs))
 
     @unittest.skipUnless(shutil.which("gs"), "Ghostscript is not installed locally")
     def test_pdfa(self):

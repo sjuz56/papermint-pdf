@@ -31,6 +31,7 @@ from papermint_job_queue import (
     fetch_job,
     public_job_status,
 )
+from papermint_extra_engines import OCR_LANGUAGES
 
 
 # ============================================================
@@ -119,7 +120,7 @@ TOOLS = [
     ("repair", "Repair PDF", "Rewrite a damaged/readable PDF into a fresh file."),
     ("page-numbers", "Page numbers", "Add page numbers to every page."),
     ("scan-pdf", "Scan to PDF", "Convert phone scans/images into a PDF."),
-    ("ocr", "OCR PDF", "Recognize English text from scanned PDF pages into Word."),
+    ("ocr", "OCR PDF", "Recognize text in multiple languages from scanned PDF pages."),
     ("compare", "Compare PDF", "Create a text difference report for two PDFs."),
     ("redact", "Redact PDF", "Search and permanently redact specified text."),
     ("crop", "Crop PDF", "Crop all pages by margins in millimeters."),
@@ -253,6 +254,7 @@ async def convert_tool(
     page_number_format: str = Form("number"),
     page_number_skip_first: bool = Form(False),
     margin: float = Form(10.0),
+    ocr_language: str = Form("eng"),
 ):
     cleanup_stale_temp_files()
 
@@ -374,6 +376,9 @@ async def convert_tool(
     elif tool == "crop":
         if margin < 0 or margin > 100:
             raise HTTPException(400, "Crop margin must be between 0 and 100 mm.")
+    elif tool == "ocr":
+        if ocr_language not in OCR_LANGUAGES:
+            raise HTTPException(400, "Choose a supported OCR language.")
 
     sources: List[Path] = []
     if tool == "merge":
@@ -456,6 +461,7 @@ async def convert_tool(
             page_number_skip_first=page_number_skip_first,
             redaction_text=text,
             crop_margin=margin,
+            ocr_language=ocr_language,
         )
     except QueueCapacityReached as exc:
         _delete_paths([*sources, output])

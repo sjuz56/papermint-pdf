@@ -27,6 +27,27 @@ MAX_IMAGE_PIXELS = 50_000_000
 MAX_RASTER_OUTPUT_BYTES = 250 * 1024 * 1024
 Image.MAX_IMAGE_PIXELS = MAX_IMAGE_PIXELS
 
+OCR_LANGUAGES = {
+    "eng": "English",
+    "ces": "Czech",
+    "slk": "Slovak",
+    "deu": "German",
+    "spa": "Spanish",
+    "fra": "French",
+    "ita": "Italian",
+    "por": "Portuguese",
+    "pol": "Polish",
+    "ron": "Romanian",
+    "rus": "Russian",
+    "ukr": "Ukrainian",
+    "chi_sim": "Chinese (Simplified)",
+    "chi_tra": "Chinese (Traditional)",
+    "hin": "Hindi",
+    "jpn": "Japanese",
+    "kor": "Korean",
+    "ara": "Arabic",
+}
+
 
 class ExtraToolError(RuntimeError):
     """A user-safe failure raised by one of the extra tools."""
@@ -480,8 +501,18 @@ def crop_pdf(source: str | Path, output: str | Path, margin_mm: float) -> dict:
 
 
 def ocr_pdf(source: str | Path, output: str | Path, language: str = "eng") -> dict:
+    if language not in OCR_LANGUAGES:
+        raise OcrError("Choose a supported OCR language.")
     if not shutil.which("tesseract"):
         raise OcrError("OCR is not available on this server.")
+    try:
+        installed_languages = set(pytesseract.get_languages(config=""))
+    except Exception as exc:
+        raise OcrError("The OCR language data could not be checked.") from exc
+    if language not in installed_languages:
+        raise OcrError(
+            f"{OCR_LANGUAGES[language]} OCR is temporarily unavailable on this server."
+        )
     destination = Path(output)
     document = _open_pdf(Path(source), OcrError)
     if document.page_count > 100:

@@ -49,7 +49,7 @@ Redis plus shared temporary object storage.
 
 ## Implemented tools
 
-Merge, split/ranges, compress, editable PDF→Word, PDF→PowerPoint, PDF→Excel, PDF→JPG ZIP, Word/PPT/Excel→PDF via LibreOffice, JPG/images→PDF, text signature, watermark, rotate, HTML→PDF, unlock, protect, organize/reorder, repair/rewrite, PDF/A-2b, page numbers, enhanced scan images→PDF, English OCR→DOCX, text compare, permanent text redaction, crop.
+Merge, split/ranges, compress, editable PDF→Word, PDF→PowerPoint, PDF→Excel, PDF→JPG ZIP, Word/PPT/Excel→PDF via LibreOffice, JPG/images→PDF, text signature, watermark, rotate, HTML→PDF, unlock, protect, organize/reorder, repair/rewrite, PDF/A-2b, page numbers, enhanced scan images→PDF, multilingual OCR→DOCX, text compare, permanent text redaction, crop.
 
 ## Important production notes
 

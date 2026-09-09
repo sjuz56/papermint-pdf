@@ -150,6 +150,7 @@ def enqueue_tool_job(
     page_number_skip_first: bool = False,
     redaction_text: str = "",
     crop_margin: float = 10.0,
+    ocr_language: str = "eng",
 ) -> dict:
     """Add one bounded background job and return its public identifier."""
     connection, queue = queue_connection()
@@ -187,6 +188,7 @@ def enqueue_tool_job(
                 "page_number_skip_first": page_number_skip_first,
                 "redaction_text": redaction_text,
                 "crop_margin": crop_margin,
+                "ocr_language": ocr_language,
             },
             timeout=JOB_TIMEOUT,
             ttl=JOB_TTL,
@@ -236,6 +238,7 @@ def process_tool_job(
     page_number_skip_first: bool = False,
     redaction_text: str = "",
     crop_margin: float = 10.0,
+    ocr_language: str = "eng",
 ) -> dict:
     """Execute one job inside an RQ worker process."""
     job = get_current_job()
@@ -338,7 +341,7 @@ def process_tool_job(
             download_name = "repaired.pdf"
             media_type = "application/pdf"
         elif tool == "ocr":
-            report = ocr_pdf(sources[0], output)
+            report = ocr_pdf(sources[0], output, ocr_language)
             download_name = "ocr.docx"
             media_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         elif tool == "compare":

@@ -45,6 +45,7 @@ class RemainingToolsApiTests(unittest.TestCase):
             "page_number_format": "number",
             "page_number_skip_first": False,
             "margin": 10.0,
+            "ocr_language": "eng",
             **data,
         }
         with patch.object(app_module, "enqueue_tool_job", side_effect=self._fake_enqueue) as enqueue:
@@ -64,7 +65,7 @@ class RemainingToolsApiTests(unittest.TestCase):
             ("pdfa", ["input.pdf"], {}),
             ("repair", ["input.pdf"], {}),
             ("scan-pdf", ["one.jpg", "two.png"], {}),
-            ("ocr", ["input.pdf"], {}),
+            ("ocr", ["input.pdf"], {"ocr_language": "ces"}),
             ("compare", ["a.pdf", "b.pdf"], {}),
             ("redact", ["input.pdf"], {"text": "secret"}),
             ("crop", ["input.pdf"], {"margin": 8.5}),
@@ -76,6 +77,8 @@ class RemainingToolsApiTests(unittest.TestCase):
                     self.assertEqual(call.kwargs["redaction_text"], "secret")
                 if tool == "crop":
                     self.assertEqual(call.kwargs["crop_margin"], 8.5)
+                if tool == "ocr":
+                    self.assertEqual(call.kwargs["ocr_language"], "ces")
 
     def test_redaction_requires_text(self):
         with self.assertRaises(HTTPException) as raised:
@@ -85,6 +88,11 @@ class RemainingToolsApiTests(unittest.TestCase):
     def test_compare_requires_exactly_two_files(self):
         with self.assertRaises(HTTPException) as raised:
             self._post("compare", ["input.pdf"])
+        self.assertEqual(raised.exception.status_code, 400)
+
+    def test_ocr_rejects_unknown_language(self):
+        with self.assertRaises(HTTPException) as raised:
+            self._post("ocr", ["input.pdf"], ocr_language="unknown")
         self.assertEqual(raised.exception.status_code, 400)
 
 

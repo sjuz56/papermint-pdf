@@ -229,7 +229,32 @@ function openTool(t) {
   }
 
   if (t.id === 'ocr') {
-    x += `<div class="field"><small>Recognizes English text in scanned pages and creates an editable Word document.</small></div>`;
+    x += `
+      <div class="field">
+        <label>Document language</label>
+        <select name="ocr_language">
+          <option value="eng">English</option>
+          <option value="ces">Čeština</option>
+          <option value="slk">Slovenčina</option>
+          <option value="deu">Deutsch</option>
+          <option value="spa">Español</option>
+          <option value="fra">Français</option>
+          <option value="ita">Italiano</option>
+          <option value="por">Português</option>
+          <option value="pol">Polski</option>
+          <option value="ron">Română</option>
+          <option value="rus">Русский</option>
+          <option value="ukr">Українська</option>
+          <option value="chi_sim">简体中文</option>
+          <option value="chi_tra">繁體中文</option>
+          <option value="hin">हिन्दी</option>
+          <option value="jpn">日本語</option>
+          <option value="kor">한국어</option>
+          <option value="ara">العربية</option>
+        </select>
+      </div>
+      <div class="field"><small>Recognizes text in scanned pages and creates an editable Word document.</small></div>
+    `;
   }
 
   if (t.id === 'html-pdf') {
