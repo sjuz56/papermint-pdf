@@ -37,7 +37,7 @@ a { color: inherit; text-decoration: none; }
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: 82px;
+  height: 112px;
   padding: 0 5vw;
   border-bottom: 1px solid rgba(216, 232, 247, .9);
   background: rgba(255, 255, 255, .88);
@@ -54,7 +54,7 @@ a { color: inherit; text-decoration: none; }
   letter-spacing: -.04em;
 }
 .brand > span { margin-left: -9px; color: var(--orange); }
-.brand-mascot { width: 84px; height: 56px; object-fit: contain; }
+.brand-mascot { width: 150px; height: 100px; object-fit: contain; }
 nav { display: flex; gap: 30px; color: #425b7c; font-size: 14px; font-weight: 700; }
 nav a { transition: color .18s ease; }
 nav a:hover { color: var(--orange); }
@@ -258,9 +258,9 @@ footer { display: flex; justify-content: space-between; padding: 29px 5vw; borde
   .grid { grid-template-columns: repeat(2, 1fr); }
 }
 @media (max-width: 560px) {
-  .topbar { height: 72px; padding: 0 17px; }
+  .topbar { height: 92px; padding: 0 17px; }
   .brand { font-size: 21px; }
-  .brand-mascot { width: 72px; height: 48px; }
+  .brand-mascot { width: 120px; height: 80px; }
   .ghost { padding: 9px 13px; }
   .hero { min-height: auto; padding: 48px 18px 45px; }
   .hero h1 { font-size: 45px; }
