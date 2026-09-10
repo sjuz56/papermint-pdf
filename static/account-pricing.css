@@ -54,6 +54,8 @@ html {
 
 .price-card {
   position: relative;
+  display: flex;
+  flex-direction: column;
   padding: 28px;
   border: 1px solid var(--line);
   border-radius: 22px;
@@ -74,6 +76,30 @@ html {
 .price-card > p:not(.price) {
   min-height: 50px;
   line-height: 1.55;
+}
+
+.plan-features {
+  display: grid;
+  gap: 10px;
+  margin: 0 0 24px;
+  padding: 0;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.4;
+  list-style: none;
+}
+
+.plan-features li {
+  position: relative;
+  padding-left: 23px;
+}
+
+.plan-features li::before {
+  position: absolute;
+  left: 0;
+  color: #397cae;
+  font-weight: 900;
+  content: "✓";
 }
 
 .price {
@@ -106,7 +132,7 @@ html {
 
 .price-button {
   width: 100%;
-  margin-top: 15px;
+  margin-top: auto;
   padding: 13px 18px;
   border: 1px solid var(--line);
   border-radius: 14px;
@@ -119,6 +145,10 @@ html {
 .price-button:hover {
   border-color: var(--accent);
   background: #f5faff;
+}
+
+.price-card .primary.full {
+  margin-top: auto;
 }
 
 .auth-dialog {
