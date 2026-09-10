@@ -19,7 +19,7 @@ html {
 .pricing {
   max-width: 1160px;
   margin: 0 auto 80px;
-  padding: 0 22px;
+  padding: 72px 22px 10px;
 }
 
 .pricing-heading {
@@ -30,6 +30,7 @@ html {
 
 .pricing-heading h2 {
   margin: 15px 0 8px;
+  color: var(--navy);
   font-size: 36px;
   letter-spacing: -.035em;
 }
@@ -60,16 +61,24 @@ html {
   border: 1px solid var(--line);
   border-radius: 22px;
   background: var(--card);
-  box-shadow: 0 8px 30px rgba(17, 24, 39, .05);
+  box-shadow: 0 12px 34px rgba(18, 51, 107, .07);
+  transition: transform .2s ease, box-shadow .2s ease;
+}
+
+.price-card:hover {
+  box-shadow: 0 20px 46px rgba(18, 51, 107, .13);
+  transform: translateY(-4px);
 }
 
 .price-card.featured {
   padding: 27px;
-  border: 2px solid var(--accent);
+  border: 2px solid var(--blue);
+  background: linear-gradient(155deg, #fff 58%, #edf8ff);
 }
 
 .price-card h3 {
   margin: 0 0 14px;
+  color: var(--navy);
   font-size: 20px;
 }
 
@@ -97,7 +106,7 @@ html {
 .plan-features li::before {
   position: absolute;
   left: 0;
-  color: #397cae;
+  color: var(--blue-dark);
   font-weight: 900;
   content: "✓";
 }
@@ -110,6 +119,7 @@ html {
 }
 
 .price strong {
+  color: var(--navy);
   font-size: 46px;
   letter-spacing: -.05em;
 }
@@ -124,8 +134,8 @@ html {
   right: 20px;
   padding: 6px 10px;
   border-radius: 999px;
-  background: #eaf5fd;
-  color: #397cae;
+  background: var(--orange-pale);
+  color: var(--orange-dark);
   font-size: 11px;
   font-weight: 800;
 }
@@ -134,17 +144,17 @@ html {
   width: 100%;
   margin-top: auto;
   padding: 13px 18px;
-  border: 1px solid var(--line);
+  border: 1px solid #b9daf0;
   border-radius: 14px;
   background: white;
-  color: var(--ink);
+  color: var(--navy);
   font-weight: 800;
   cursor: pointer;
 }
 
 .price-button:hover {
-  border-color: var(--accent);
-  background: #f5faff;
+  border-color: var(--blue);
+  background: var(--blue-pale);
 }
 
 .price-card .primary.full {
@@ -162,7 +172,7 @@ html {
   margin: 2px 42px 24px 0;
   padding: 4px;
   border-radius: 13px;
-  background: #f1f4f7;
+  background: var(--blue-pale);
 }
 
 .auth-tab {
@@ -177,8 +187,8 @@ html {
 
 .auth-tab.active {
   background: white;
-  color: var(--ink);
-  box-shadow: 0 2px 7px rgba(17, 24, 39, .08);
+  color: var(--navy);
+  box-shadow: 0 2px 9px rgba(18, 51, 107, .1);
 }
 
 .form-status {
@@ -209,8 +219,8 @@ html {
   height: 52px;
   margin: 0 auto 14px;
   border-radius: 50%;
-  background: #eaf5fd;
-  color: #397cae;
+  background: var(--orange-pale);
+  color: var(--orange);
   font-size: 24px;
   font-weight: 900;
 }
