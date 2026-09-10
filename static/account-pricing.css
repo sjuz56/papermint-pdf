@@ -17,7 +17,7 @@ html {
 }
 
 .pricing {
-  max-width: 940px;
+  max-width: 1160px;
   margin: 0 auto 80px;
   padding: 0 22px;
 }
@@ -46,9 +46,9 @@ html {
 
 .pricing-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 18px;
-  max-width: 760px;
+  max-width: 1080px;
   margin: auto;
 }
 
@@ -189,7 +189,7 @@ html {
   display: none;
 }
 
-@media (max-width: 640px) {
+@media (max-width: 840px) {
   .pricing-grid {
     grid-template-columns: 1fr;
   }
