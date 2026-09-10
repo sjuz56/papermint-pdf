@@ -54,7 +54,7 @@ a { color: inherit; text-decoration: none; }
   letter-spacing: -.04em;
 }
 .brand > span { margin-left: -9px; color: var(--orange); }
-.brand-mascot { width: 40px; height: 40px; object-fit: contain; }
+.brand-mascot { width: 54px; height: 36px; object-fit: contain; }
 nav { display: flex; gap: 30px; color: #425b7c; font-size: 14px; font-weight: 700; }
 nav a { transition: color .18s ease; }
 nav a:hover { color: var(--orange); }
@@ -260,7 +260,7 @@ footer { display: flex; justify-content: space-between; padding: 29px 5vw; borde
 @media (max-width: 560px) {
   .topbar { height: 68px; padding: 0 17px; }
   .brand { font-size: 21px; }
-  .brand-mascot { width: 34px; height: 34px; }
+  .brand-mascot { width: 45px; height: 30px; }
   .ghost { padding: 9px 13px; }
   .hero { min-height: auto; padding: 48px 18px 45px; }
   .hero h1 { font-size: 45px; }
