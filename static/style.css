@@ -53,27 +53,8 @@ a { color: inherit; text-decoration: none; }
   font-weight: 900;
   letter-spacing: -.04em;
 }
-.brand span:not(.brand-dot) { margin-left: -9px; color: var(--orange); }
-.brand-dot {
-  position: relative;
-  width: 29px;
-  height: 29px;
-  border: 4px solid var(--navy);
-  border-radius: 48% 52% 44% 56%;
-  background: var(--blue);
-  box-shadow: 5px 4px 0 var(--orange-pale);
-}
-.brand-dot::after {
-  position: absolute;
-  right: 4px;
-  bottom: 5px;
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: white;
-  box-shadow: -10px 0 0 white;
-  content: "";
-}
+.brand > span { margin-left: -9px; color: var(--orange); }
+.brand-mascot { width: 40px; height: 40px; object-fit: contain; }
 nav { display: flex; gap: 30px; color: #425b7c; font-size: 14px; font-weight: 700; }
 nav a { transition: color .18s ease; }
 nav a:hover { color: var(--orange); }
@@ -94,16 +75,11 @@ nav a:hover { color: var(--orange); }
 .ghost:hover { border-color: var(--blue); background: white; transform: translateY(-1px); }
 
 .hero {
-  display: grid;
-  grid-template-columns: minmax(0, 1.25fr) minmax(280px, .75fr);
-  align-items: center;
-  gap: 28px;
   max-width: 1180px;
-  min-height: 470px;
   margin: auto;
-  padding: 58px 22px 48px;
+  padding: 82px 22px 76px;
 }
-.hero-copy { position: relative; z-index: 2; }
+.hero-copy { max-width: 850px; margin: auto; text-align: center; }
 .pill {
   display: inline-flex;
   align-items: center;
@@ -118,7 +94,7 @@ nav a:hover { color: var(--orange); }
   text-transform: uppercase;
 }
 .hero h1 {
-  max-width: 690px;
+  max-width: 850px;
   margin: 22px 0 24px;
   color: var(--navy);
   font-size: clamp(44px, 5.2vw, 68px);
@@ -128,12 +104,12 @@ nav a:hover { color: var(--orange); }
 .hero h1 span { display: block; color: var(--orange); }
 .hero p {
   max-width: 625px;
-  margin: 0 0 28px;
+  margin: 0 auto 28px;
   color: var(--muted);
   font-size: 18px;
   line-height: 1.65;
 }
-.hero-trust { display: flex; flex-wrap: wrap; gap: 10px 18px; color: #46617f; font-size: 13px; font-weight: 750; }
+.hero-trust { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px 18px; color: #46617f; font-size: 13px; font-weight: 750; }
 .hero-trust span { display: inline-flex; align-items: center; gap: 7px; }
 .hero-trust span::before {
   display: inline-grid;
@@ -146,14 +122,6 @@ nav a:hover { color: var(--orange); }
   font-size: 11px;
   content: "✓";
 }
-.hero-visual { position: relative; display: grid; place-items: center; min-height: 330px; }
-.hero-visual img {
-  display: block;
-  width: min(100%, 360px);
-  border: 0;
-  box-shadow: none;
-}
-
 .primary {
   display: inline-flex;
   align-items: center;
@@ -280,28 +248,24 @@ main { max-width: 1180px; margin: auto; padding: 60px 22px 100px; }
 footer { display: flex; justify-content: space-between; padding: 29px 5vw; border-top: 1px solid var(--line); background: white; color: #63758e; font-size: 13px; }
 
 @media (max-width: 980px) {
-  .hero { grid-template-columns: 1fr 300px; gap: 20px; }
   .grid { grid-template-columns: repeat(3, 1fr); }
 }
 @media (max-width: 800px) {
   nav { display: none; }
-  .hero { grid-template-columns: 1fr; padding-top: 58px; text-align: center; }
+  .hero { padding-top: 58px; text-align: center; }
   .hero-copy { display: grid; justify-items: center; }
   .hero-trust { justify-content: center; }
-  .hero-visual { width: min(100%, 390px); min-height: 290px; margin: auto; }
   .grid { grid-template-columns: repeat(2, 1fr); }
 }
 @media (max-width: 560px) {
   .topbar { height: 68px; padding: 0 17px; }
   .brand { font-size: 21px; }
-  .brand-dot { width: 25px; height: 25px; }
+  .brand-mascot { width: 34px; height: 34px; }
   .ghost { padding: 9px 13px; }
   .hero { min-height: auto; padding: 48px 18px 45px; }
   .hero h1 { font-size: 45px; }
   .hero p { font-size: 16px; }
   .hero-trust { display: grid; justify-content: start; width: 100%; text-align: left; }
-  .hero-visual { min-height: 240px; }
-  .hero-visual img { width: min(100%, 290px); border-radius: 24px; }
   main { padding: 46px 17px 76px; }
   .section-title { flex-direction: column; align-items: stretch; gap: 17px; }
   .section-title h2 { font-size: 31px; }
