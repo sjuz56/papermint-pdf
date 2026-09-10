@@ -145,6 +145,13 @@ document.getElementById('logoutButton')?.addEventListener('click', async () => {
 document.querySelectorAll('[data-plan]').forEach(button => {
   button.addEventListener('click', () => {
     selectedPlan = button.dataset.plan;
+
+    if (selectedPlan === 'free') {
+      selectedPlan = null;
+      document.getElementById('tools')?.scrollIntoView({behavior: 'smooth'});
+      return;
+    }
+
     if (!currentAccount?.authenticated) {
       setAuthMode('register');
       openAuth();
