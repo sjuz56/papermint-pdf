@@ -1,6 +1,7 @@
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 from starlette.background import BackgroundTask
 from starlette.concurrency import run_in_threadpool
 from pathlib import Path
@@ -32,6 +33,7 @@ from papermint_job_queue import (
     public_job_status,
 )
 from papermint_extra_engines import OCR_LANGUAGES
+from papermint_auth import AuthError, AuthStore, SESSION_SECONDS
 
 
 # ============================================================
@@ -41,6 +43,12 @@ from papermint_extra_engines import OCR_LANGUAGES
 BASE = Path(__file__).parent
 TMP = BASE / "tmp"
 TMP.mkdir(exist_ok=True)
+
+AUTH_COOKIE = "papermint_session"
+AUTH_STORE = AuthStore(
+    database_url=os.getenv("DATABASE_URL"),
+    sqlite_path=BASE / "data" / "papermint.sqlite3",
+)
 
 MAX_UPLOAD_MB = max(1, int(os.getenv("PAPERMINT_MAX_UPLOAD_MB", "50")))
 MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024
@@ -142,6 +150,63 @@ def tools():
         }
         for tool_id, name, description in TOOLS
     ]
+
+
+class AuthCredentials(BaseModel):
+    email: str
+    password: str
+
+
+def _auth_response(user, token: str, request: Request) -> JSONResponse:
+    response = JSONResponse({"authenticated": True, "email": user.email})
+    forwarded_proto = request.headers.get("x-forwarded-proto", "")
+    secure = request.url.scheme == "https" or forwarded_proto.split(",")[0].strip() == "https"
+    response.set_cookie(
+        AUTH_COOKIE,
+        token,
+        max_age=SESSION_SECONDS,
+        httponly=True,
+        secure=secure,
+        samesite="lax",
+        path="/",
+    )
+    return response
+
+
+@app.post("/api/auth/register")
+def register_account(credentials: AuthCredentials, request: Request):
+    try:
+        user = AUTH_STORE.register(credentials.email, credentials.password)
+        token = AUTH_STORE.create_session(user.id)
+    except AuthError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return _auth_response(user, token, request)
+
+
+@app.post("/api/auth/login")
+def login_account(credentials: AuthCredentials, request: Request):
+    try:
+        user = AUTH_STORE.authenticate(credentials.email, credentials.password)
+        token = AUTH_STORE.create_session(user.id)
+    except AuthError as exc:
+        raise HTTPException(401, str(exc)) from exc
+    return _auth_response(user, token, request)
+
+
+@app.get("/api/auth/me")
+def current_account(request: Request):
+    user = AUTH_STORE.user_for_session(request.cookies.get(AUTH_COOKIE))
+    if not user:
+        return {"authenticated": False}
+    return {"authenticated": True, "email": user.email}
+
+
+@app.post("/api/auth/logout")
+def logout_account(request: Request):
+    AUTH_STORE.delete_session(request.cookies.get(AUTH_COOKIE))
+    response = JSONResponse({"authenticated": False})
+    response.delete_cookie(AUTH_COOKIE, path="/", samesite="lax")
+    return response
 
 
 # ============================================================

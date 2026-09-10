@@ -5,18 +5,18 @@
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
 <title>PaperMint — PDF tools</title>
 <link rel="stylesheet" href="/static/style.css"/>
+<link rel="stylesheet" href="/static/account-pricing.css"/>
 </head>
 <body>
 <header class="topbar">
   <a class="brand" href="#">Paper<span>Mint</span></a>
-  <nav><a href="#tools">PDF tools</a><a href="#about">How it works</a><a href="#privacy">Privacy</a></nav>
-  <button class="ghost">Sign in</button>
+  <nav><a href="#tools">PDF tools</a><a href="#pricing">Pricing</a><a href="#privacy">Privacy</a></nav>
+  <button class="ghost" id="signInButton" type="button">Sign in</button>
 </header>
 <section class="hero">
   <div class="pill">Fast • private • simple</div>
   <h1>Every PDF tool you need.<br><span>In one clean place.</span></h1>
   <p>Convert, organize, compress, sign, protect and OCR documents directly in your browser workflow.</p>
-  <a class="primary" href="#tools">Browse all 26 tools</a>
 </section>
 <main id="tools">
   <div class="section-title"><div><h2>All PDF tools</h2><p>Every tool is listed here. Pick one and process your document.</p></div><input id="search" placeholder="Search all 26 tools…"/></div>
@@ -43,8 +43,64 @@
   </div>
 </div>
 
+<section id="pricing" class="pricing">
+  <div class="pricing-heading">
+    <div class="pill">Simple pricing</div>
+    <h2>Choose the plan that works for you</h2>
+    <p>Use all PDF tools with one straightforward subscription.</p>
+  </div>
+  <div class="pricing-grid">
+    <article class="price-card">
+      <h3>Monthly</h3>
+      <p class="price"><strong>€7</strong><span>/ month</span></p>
+      <p>Full access with the flexibility to cancel anytime.</p>
+      <button class="price-button" type="button" data-plan="monthly">Choose monthly</button>
+    </article>
+    <article class="price-card featured">
+      <div class="saving">Save €24 a year</div>
+      <h3>Yearly</h3>
+      <p class="price"><strong>€60</strong><span>/ year</span></p>
+      <p>Full access for the best price — equal to €5 per month.</p>
+      <button class="primary full" type="button" data-plan="yearly">Choose yearly</button>
+    </article>
+  </div>
+</section>
+
+<div id="authModal" class="modal hidden" aria-hidden="true">
+  <div class="dialog auth-dialog" role="dialog" aria-modal="true" aria-labelledby="authTitle">
+    <button class="close" id="authClose" type="button" aria-label="Close">×</button>
+    <div id="authSignedOut">
+      <div class="auth-tabs" role="tablist">
+        <button class="auth-tab active" type="button" data-auth-mode="login">Sign in</button>
+        <button class="auth-tab" type="button" data-auth-mode="register">Create account</button>
+      </div>
+      <h2 id="authTitle">Welcome back</h2>
+      <p id="authSubtitle">Sign in to manage your PaperMint account.</p>
+      <form id="authForm">
+        <div class="field">
+          <label for="authEmail">Email</label>
+          <input id="authEmail" name="email" type="email" autocomplete="email" required>
+        </div>
+        <div class="field">
+          <label for="authPassword">Password</label>
+          <input id="authPassword" name="password" type="password" autocomplete="current-password" minlength="8" maxlength="128" required>
+        </div>
+        <button class="primary full" id="authSubmit" type="submit">Sign in</button>
+        <div id="authStatus" class="form-status" aria-live="polite"></div>
+      </form>
+    </div>
+    <div id="authSignedIn" class="hidden account-panel">
+      <div class="account-check">✓</div>
+      <h2>Your account</h2>
+      <p>You are signed in as <strong id="accountEmail"></strong>.</p>
+      <button class="price-button" id="logoutButton" type="button">Sign out</button>
+    </div>
+  </div>
+</div>
+
 <section id="privacy" class="privacy"><h2>Built around privacy</h2><p>Uploaded originals are deleted after processing. Downloadable results are deleted after download or automatically within 30 minutes.</p></section>
 <footer><span>© 2026 PaperMint</span><span>PDF tools made simple.</span></footer>
 <script src="/static/app.js"></script>
+<script src="/static/account-pricing.js"></script>
 </body>
 </html>

@@ -1,0 +1,212 @@
+html {
+  scroll-behavior: smooth;
+}
+
+.ghost {
+  cursor: pointer;
+  max-width: 210px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#tools,
+#pricing,
+#privacy {
+  scroll-margin-top: 92px;
+}
+
+.pricing {
+  max-width: 940px;
+  margin: 0 auto 80px;
+  padding: 0 22px;
+}
+
+.pricing-heading {
+  max-width: 650px;
+  margin: 0 auto 30px;
+  text-align: center;
+}
+
+.pricing-heading h2 {
+  margin: 15px 0 8px;
+  font-size: 36px;
+  letter-spacing: -.035em;
+}
+
+.pricing-heading p,
+.price-card > p:not(.price),
+.account-panel p {
+  color: var(--muted);
+}
+
+.pricing-heading p {
+  margin: 0;
+}
+
+.pricing-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  max-width: 760px;
+  margin: auto;
+}
+
+.price-card {
+  position: relative;
+  padding: 28px;
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  background: var(--card);
+  box-shadow: 0 8px 30px rgba(17, 24, 39, .05);
+}
+
+.price-card.featured {
+  padding: 27px;
+  border: 2px solid var(--accent);
+}
+
+.price-card h3 {
+  margin: 0 0 14px;
+  font-size: 20px;
+}
+
+.price-card > p:not(.price) {
+  min-height: 50px;
+  line-height: 1.55;
+}
+
+.price {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  margin: 0 0 16px;
+}
+
+.price strong {
+  font-size: 46px;
+  letter-spacing: -.05em;
+}
+
+.price span {
+  color: var(--muted);
+}
+
+.saving {
+  position: absolute;
+  top: 19px;
+  right: 20px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: #eaf5fd;
+  color: #397cae;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.price-button {
+  width: 100%;
+  margin-top: 15px;
+  padding: 13px 18px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: white;
+  color: var(--ink);
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.price-button:hover {
+  border-color: var(--accent);
+  background: #f5faff;
+}
+
+.auth-dialog {
+  max-width: 460px;
+}
+
+.auth-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 5px;
+  margin: 2px 42px 24px 0;
+  padding: 4px;
+  border-radius: 13px;
+  background: #f1f4f7;
+}
+
+.auth-tab {
+  padding: 10px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--muted);
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.auth-tab.active {
+  background: white;
+  color: var(--ink);
+  box-shadow: 0 2px 7px rgba(17, 24, 39, .08);
+}
+
+.form-status {
+  min-height: 20px;
+  margin-top: 12px;
+  color: var(--muted);
+  font-size: 13px;
+  text-align: center;
+}
+
+.form-status.error {
+  color: #b42318;
+}
+
+.account-panel {
+  padding: 16px 0 6px;
+  text-align: center;
+}
+
+.account-panel p {
+  word-break: break-word;
+}
+
+.account-check {
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  margin: 0 auto 14px;
+  border-radius: 50%;
+  background: #eaf5fd;
+  color: #397cae;
+  font-size: 24px;
+  font-weight: 900;
+}
+
+#authSignedIn.hidden {
+  display: none;
+}
+
+@media (max-width: 640px) {
+  .pricing-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .pricing-heading h2 {
+    font-size: 30px;
+  }
+
+  .price-card > p:not(.price) {
+    min-height: 0;
+  }
+
+  .auth-dialog {
+    padding: 24px;
+  }
+
+  .auth-tabs {
+    margin-right: 36px;
+  }
+}

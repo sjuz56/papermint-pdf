@@ -25,6 +25,10 @@ Do not deploy Word to PDF with Render's native Python runtime. It does not inclu
 LibreOffice, so the emergency Pandoc/WeasyPrint fallback cannot preserve floating
 Word objects such as positioned images.
 
+Set `DATABASE_URL` to a Render PostgreSQL connection string before enabling public
+accounts. Local development uses `data/papermint.sqlite3`; Render's default disk is
+ephemeral, so SQLite must not be used for production accounts.
+
 
 ## Background processing and overload protection
 
@@ -53,7 +57,7 @@ Merge, split/ranges, compress, editable PDF→Word, PDF→PowerPoint, PDF→Exce
 
 ## Important production notes
 
-This is a functional MVP, not yet a hardened public SaaS. Before public launch add rate limiting, malware scanning, page limits, encrypted storage, logging/monitoring, legal/privacy pages, billing, and sandboxed document conversion workers.
+This is a functional MVP, not yet a hardened public SaaS. Before public launch add email verification and password reset, rate limiting, malware scanning, page limits, encrypted storage, logging/monitoring, legal/privacy pages, billing, and sandboxed document conversion workers.
 
 PDF→Word creates an editable DOCX and preserves the original layout as closely as the source permits.
 
