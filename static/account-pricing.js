@@ -47,6 +47,8 @@ function renderAccount() {
     signInButton.textContent = accountT('auth.signIn');
     setAuthMode(authMode);
   }
+  window.PaperMintAccount = currentAccount;
+  window.dispatchEvent(new CustomEvent('papermint:accountchange', {detail: currentAccount}));
 }
 
 function openAuth() {
@@ -58,6 +60,8 @@ function openAuth() {
     window.setTimeout(() => document.getElementById('authEmail').focus(), 0);
   }
 }
+
+window.openPaperMintAuth = openAuth;
 
 function closeAuth() {
   authModal.classList.add('hidden');

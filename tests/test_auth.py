@@ -49,6 +49,32 @@ class AuthStoreTests(unittest.TestCase):
         self.assertTrue(verify_password("strong-password", encoded))
         self.assertFalse(verify_password("wrong-password", encoded))
 
+    def test_subscription_and_ai_usage_limits(self):
+        user = self.store.register("pro@example.com", "strong-password")
+        self.assertEqual(self.store.plan_for_user(user), "free")
+
+        self.store.set_subscription(user.id, "monthly", current_period_end=4_102_444_800)
+        self.assertEqual(self.store.plan_for_user(user), "pro")
+
+        usage = self.store.consume_ai_usage(
+            user.id,
+            documents=1,
+            document_limit=1,
+            question_limit=3,
+        )
+        self.assertEqual((usage.documents, usage.questions), (1, 0))
+
+        with self.assertRaises(AuthError):
+            self.store.consume_ai_usage(
+                user.id,
+                documents=1,
+                document_limit=1,
+                question_limit=3,
+            )
+
+        refunded = self.store.refund_ai_usage(user.id, documents=1)
+        self.assertEqual(refunded.documents, 0)
+
 
 if __name__ == "__main__":
     unittest.main()

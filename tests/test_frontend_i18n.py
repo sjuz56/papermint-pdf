@@ -45,6 +45,16 @@ class FrontendLocalizationTests(unittest.TestCase):
         ):
             self.assertIn(translated_name, self.i18n)
 
+    def test_ask_octo_is_translated_and_marked_pro(self):
+        app_js = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
+        for translated_description in (
+            "Shrňte PDF", "PDF zusammenfassen", "Resume un PDF",
+            "Résumez un PDF", "总结 PDF", "PDF का सारांश", "PDFを要約",
+        ):
+            self.assertIn(translated_description, self.i18n)
+        self.assertIn("pro-badge", app_js)
+        self.assertIn("/api/ai/document", app_js)
+
 
 if __name__ == "__main__":
     unittest.main()

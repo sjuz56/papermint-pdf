@@ -201,6 +201,9 @@ main { max-width: 1180px; margin: auto; padding: 60px 22px 100px; }
 .card:nth-child(3n + 2) .icon { background: var(--orange-pale); color: var(--orange-dark); }
 .card h3 { margin: 0 0 7px; color: var(--navy); font-size: 17px; }
 .card p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
+.pro-card { border-color: #ffc18e; background: linear-gradient(145deg, #fff 62%, var(--orange-pale)); }
+.pro-card .icon { background: linear-gradient(145deg, var(--orange), #ff9138); color: white; }
+.pro-badge { position: absolute; z-index: 2; top: 15px; right: 15px; padding: 5px 9px; border-radius: 999px; background: var(--navy); color: white; font-size: 11px; font-weight: 900; letter-spacing: .04em; }
 
 .modal { position: fixed; z-index: 30; inset: 0; display: grid; place-items: center; padding: 18px; background: rgba(10, 33, 72, .66); backdrop-filter: blur(5px); }
 .hidden { display: none; }
@@ -262,6 +265,28 @@ main { max-width: 1180px; margin: auto; padding: 60px 22px 100px; }
 .mode { padding: 12px; border: 1px solid var(--line); border-radius: 12px; }
 .mode input { margin-right: 6px; }
 #status { margin-top: 12px; color: var(--muted); font-size: 13px; word-break: break-word; }
+.ai-settings { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.ai-privacy { margin: 13px 0 2px; padding: 12px 14px; border: 1px solid #cbe8f9; border-radius: 13px; background: var(--blue-pale); color: #49657f; font-size: 12px; line-height: 1.55; }
+.ai-upgrade { display: grid; justify-items: center; padding: 14px 8px 4px; text-align: center; }
+.ai-upgrade img { width: 150px; height: 120px; object-fit: contain; }
+.ai-upgrade strong { color: var(--navy); font-size: 20px; }
+.ai-upgrade p { max-width: 440px; margin: 9px auto 4px; color: var(--muted); line-height: 1.55; }
+.ai-workspace { display: grid; gap: 13px; margin-top: 16px; }
+.ai-result-heading { display: flex; align-items: center; justify-content: space-between; gap: 14px; color: var(--navy); font-size: 15px; }
+.ai-result-heading small { color: var(--muted); font-size: 12px; }
+.ai-conversation { display: grid; gap: 11px; max-height: 340px; overflow: auto; padding: 4px; }
+.ai-message { max-width: 92%; padding: 13px 15px; border-radius: 16px; line-height: 1.55; word-break: normal; }
+.ai-message.octo { justify-self: start; border: 1px solid #cbe8f9; border-bottom-left-radius: 5px; background: var(--blue-pale); color: #294a6d; }
+.ai-message.user { justify-self: end; border-bottom-right-radius: 5px; background: var(--navy); color: white; }
+.ai-message strong { display: block; margin-bottom: 5px; font-size: 12px; }
+.ai-message-copy { white-space: pre-wrap; }
+.ai-message small { display: block; margin-top: 7px; color: var(--blue-dark); font-size: 11px; }
+.ai-question-form { display: grid; grid-template-columns: 1fr auto; gap: 9px; }
+.ai-question-form textarea { min-height: 58px; resize: vertical; padding: 12px; border: 1px solid var(--line); border-radius: 13px; outline: none; }
+.ai-question-form textarea:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(53, 168, 239, .12); }
+.ai-question-form .primary { align-self: stretch; min-width: 92px; padding: 11px 17px; }
+.ai-question-form .primary:disabled { opacity: .55; cursor: not-allowed; transform: none; }
+.ai-remaining { grid-column: 1 / -1; color: var(--muted); text-align: right; }
 
 .privacy {
   position: relative;
@@ -331,6 +356,11 @@ footer { display: flex; justify-content: space-between; padding: 29px 5vw; borde
   .section-title input { width: 100%; }
   .grid { grid-template-columns: 1fr; }
   .dialog { padding: 24px 18px; }
+  .ai-settings { grid-template-columns: 1fr; gap: 0; }
+  .ai-result-heading { align-items: flex-start; flex-direction: column; gap: 3px; }
+  .ai-question-form { grid-template-columns: 1fr; }
+  .ai-question-form .primary { min-height: 48px; }
+  .ai-remaining { text-align: left; }
   .drop { min-height: 190px; padding: 36px 18px; }
   .drop-mascot { width: min(58%, 190px); }
   .privacy { margin: 0 17px 54px; padding: 34px 27px; border-radius: 23px; }

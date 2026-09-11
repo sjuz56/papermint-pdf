@@ -1,6 +1,7 @@
 let tools = [];
 let selectedFiles = [];
 let activeTool = null;
+let askOctoSession = null;
 
 const i18n = window.PaperMintI18n;
 const t = (key, variables) => i18n?.t(key, variables) || key;
@@ -47,7 +48,8 @@ const labels = {
   ocr: 'OCR',
   compare: 'DIFF',
   redact: 'HIDE',
-  crop: 'CROP'
+  crop: 'CROP',
+  'ask-octo': 'AI'
 };
 
 async function init() {
@@ -82,9 +84,10 @@ function render(list) {
 
   g.innerHTML = localized.map((tool, i) => `
     <article
-      class="card"
+      class="card${tool.pro ? ' pro-card' : ''}"
       data-tool-index="${i}"
     >
+      ${tool.pro ? `<span class="pro-badge">${t('ai.pro')}</span>` : ''}
       <div class="icon">
         ${labels[tool.id] || 'PDF'}
       </div>
@@ -192,6 +195,8 @@ function openTool(tool) {
     .getElementById('status')
     .textContent = '';
 
+  askOctoSession = null;
+
   selectedFiles = [];
 
   const fileInput = document.getElementById('files');
@@ -200,9 +205,75 @@ function openTool(tool) {
   fileInput.multiple = multiFileTools.has(tool.id);
   fileInput.accept = acceptedFiles[tool.id] || '.pdf,application/pdf';
 
+  const dropZone = document.getElementById('dropZone');
+  const processButton = document.getElementById('processButton');
+  document.getElementById('extra')?.classList.remove('hidden');
+  dropZone?.classList.remove('hidden');
+  processButton?.classList.remove('hidden');
+  if (processButton) processButton.textContent = t('upload.process');
+
   renderSelectedFiles();
 
   let x = '';
+
+  if (tool.id === 'ask-octo') {
+    const account = window.PaperMintAccount;
+    if (account?.plan !== 'pro') {
+      dropZone?.classList.add('hidden');
+      processButton?.classList.add('hidden');
+      x = `
+        <div class="ai-upgrade">
+          <img src="/static/assets/octopus-mascot-transparent.png" alt="" aria-hidden="true">
+          <strong>${t('ai.proRequired')}</strong>
+          <p>${t('ai.proDescription')}</p>
+          <button class="primary full" id="askOctoUpgrade" type="button">${t('ai.choosePlan')}</button>
+        </div>
+      `;
+    } else {
+      if (processButton) processButton.textContent = t('ai.summarize');
+      x = `
+        <div class="ai-settings">
+          <div class="field">
+            <label>${t('form.documentLanguage')}</label>
+            <select name="ocr_language">
+              <option value="eng">English</option>
+              <option value="ces">Čeština</option>
+              <option value="slk">Slovenčina</option>
+              <option value="deu">Deutsch</option>
+              <option value="spa">Español</option>
+              <option value="fra">Français</option>
+              <option value="ita">Italiano</option>
+              <option value="por">Português</option>
+              <option value="pol">Polski</option>
+              <option value="ron">Română</option>
+              <option value="rus">Русский</option>
+              <option value="ukr">Українська</option>
+              <option value="chi_sim">简体中文</option>
+              <option value="chi_tra">繁體中文</option>
+              <option value="hin">हिन्दी</option>
+              <option value="jpn">日本語</option>
+              <option value="kor">한국어</option>
+              <option value="ara">العربية</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>${t('ai.answerLanguage')}</label>
+            <select name="response_language">
+              <option value="en">English</option>
+              <option value="cs">Čeština</option>
+              <option value="de">Deutsch</option>
+              <option value="es">Español</option>
+              <option value="fr">Français</option>
+              <option value="zh">中文</option>
+              <option value="hi">हिन्दी</option>
+              <option value="ja">日本語</option>
+            </select>
+          </div>
+        </div>
+        <div class="ai-privacy">${t('ai.privacy')}</div>
+      `;
+    }
+  }
 
   if (tool.id === 'pdf-word') {
     x = `
@@ -468,6 +539,15 @@ function openTool(tool) {
   document
     .getElementById('extra')
     .innerHTML = x;
+
+  document.getElementById('askOctoUpgrade')?.addEventListener('click', () => {
+    closeModal();
+    if (!window.PaperMintAccount?.authenticated && window.openPaperMintAuth) {
+      window.openPaperMintAuth();
+      return;
+    }
+    document.getElementById('pricing')?.scrollIntoView({behavior: 'smooth'});
+  });
 }
 
 function closeModal() {
@@ -534,6 +614,137 @@ async function downloadBlobResponse(response, filename) {
   }, 15000);
 }
 
+function appendAiMessage(container, role, text, sourcePages = []) {
+  const message = document.createElement('div');
+  message.className = `ai-message ${role}`;
+
+  const label = document.createElement('strong');
+  label.textContent = role === 'user' ? t('ai.you') : 'Ask Octo';
+  message.appendChild(label);
+
+  const copy = document.createElement('div');
+  copy.className = 'ai-message-copy';
+  copy.textContent = text;
+  message.appendChild(copy);
+
+  if (sourcePages.length) {
+    const sources = document.createElement('small');
+    sources.textContent = t('ai.sourcePages', {pages: sourcePages.join(', ')});
+    message.appendChild(sources);
+  }
+  container.appendChild(message);
+  container.scrollTop = container.scrollHeight;
+}
+
+function renderAskOctoResult(data, responseLanguage) {
+  askOctoSession = {
+    id: data.session_id,
+    remaining: data.questions_remaining,
+    responseLanguage
+  };
+
+  const status = document.getElementById('status');
+  status.textContent = '';
+
+  const workspace = document.createElement('section');
+  workspace.className = 'ai-workspace';
+
+  const heading = document.createElement('div');
+  heading.className = 'ai-result-heading';
+  const title = document.createElement('strong');
+  title.textContent = t('ai.summary');
+  const usage = document.createElement('small');
+  usage.textContent = t('ai.documentUsage', {
+    used: data.usage.documents_used,
+    limit: data.usage.documents_limit
+  });
+  heading.append(title, usage);
+  workspace.appendChild(heading);
+
+  const conversation = document.createElement('div');
+  conversation.className = 'ai-conversation';
+  appendAiMessage(conversation, 'octo', data.summary);
+  workspace.appendChild(conversation);
+
+  const questionForm = document.createElement('div');
+  questionForm.className = 'ai-question-form';
+  const question = document.createElement('textarea');
+  question.name = 'question';
+  question.rows = 2;
+  question.maxLength = 600;
+  question.required = true;
+  question.placeholder = t('ai.questionPlaceholder');
+  question.setAttribute('aria-label', t('ai.questionPlaceholder'));
+  const askButton = document.createElement('button');
+  askButton.type = 'button';
+  askButton.className = 'primary';
+  askButton.textContent = t('ai.ask');
+  const remaining = document.createElement('small');
+  remaining.className = 'ai-remaining';
+  remaining.textContent = t('ai.questionsRemaining', {count: askOctoSession.remaining});
+  questionForm.append(question, askButton, remaining);
+  workspace.appendChild(questionForm);
+  status.appendChild(workspace);
+
+  document.getElementById('dropZone')?.classList.add('hidden');
+  document.getElementById('extra')?.classList.add('hidden');
+  document.getElementById('processButton')?.classList.add('hidden');
+
+  const submitQuestion = async event => {
+    event?.preventDefault();
+    event?.stopPropagation();
+    const prompt = question.value.trim();
+    if (!prompt || !askOctoSession?.id) return;
+
+    appendAiMessage(conversation, 'user', prompt);
+    question.value = '';
+    askButton.disabled = true;
+    askButton.textContent = t('ai.thinking');
+    try {
+      const response = await fetch('/api/ai/question', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          session_id: askOctoSession.id,
+          question: prompt,
+          response_language: askOctoSession.responseLanguage
+        })
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.detail || t('ai.failed'));
+      askOctoSession.remaining = result.questions_remaining;
+      appendAiMessage(conversation, 'octo', result.answer, result.source_pages || []);
+      remaining.textContent = t('ai.questionsRemaining', {count: askOctoSession.remaining});
+      if (askOctoSession.remaining <= 0) {
+        question.disabled = true;
+        askButton.disabled = true;
+      }
+    } catch (error) {
+      appendAiMessage(conversation, 'octo', `${t('error.prefix')}: ${error.message}`);
+    } finally {
+      if (askOctoSession?.remaining > 0) askButton.disabled = false;
+      askButton.textContent = t('ai.ask');
+    }
+  };
+  askButton.addEventListener('click', submitQuestion);
+  question.addEventListener('keydown', event => {
+    if (event.key === 'Enter' && !event.shiftKey) submitQuestion(event);
+  });
+}
+
+async function processAskOcto(formData) {
+  const responseLanguage = formData.get('response_language') || i18n?.language || 'en';
+  const upload = new FormData();
+  upload.append('file', selectedFiles[0]);
+  upload.append('ocr_language', formData.get('ocr_language') || 'eng');
+  upload.append('response_language', responseLanguage);
+
+  const response = await fetch('/api/ai/document', {method: 'POST', body: upload});
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.detail || t('ai.failed'));
+  renderAskOctoResult(data, responseLanguage);
+}
+
 const form = document.getElementById('convertForm');
 
 if (form) {
@@ -588,6 +799,12 @@ if (form) {
 
       if (!selectedFiles.length) {
         throw new Error(t('error.noFiles'));
+      }
+
+      if (tool === 'ask-octo') {
+        s.textContent = t('ai.reading');
+        await processAskOcto(fd);
+        return;
       }
 
       // =========================================

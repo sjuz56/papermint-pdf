@@ -17,6 +17,7 @@ from pathlib import Path
 import re
 import secrets
 import sqlite3
+import threading
 import time
 import uuid
 
@@ -34,6 +35,13 @@ class AuthError(ValueError):
 class AuthUser:
     id: str
     email: str
+
+
+@dataclass(frozen=True)
+class AiUsage:
+    period: str
+    documents: int
+    questions: int
 
 
 def normalize_email(value: str) -> str:
@@ -100,6 +108,7 @@ class AuthStore:
         if not self.postgres:
             self.sqlite_path.parent.mkdir(parents=True, exist_ok=True)
 
+        self._usage_lock = threading.Lock()
         self.initialize()
 
     @contextmanager
@@ -152,6 +161,29 @@ class AuthStore:
             )
             cursor.execute(
                 "CREATE INDEX IF NOT EXISTS sessions_expires_idx ON sessions(expires_at)"
+            )
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS subscriptions (
+                    user_id TEXT PRIMARY KEY,
+                    plan TEXT NOT NULL,
+                    current_period_end BIGINT,
+                    updated_at BIGINT NOT NULL,
+                    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+                )
+                """
+            )
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS ai_usage (
+                    user_id TEXT NOT NULL,
+                    period TEXT NOT NULL,
+                    documents INTEGER NOT NULL DEFAULT 0,
+                    questions INTEGER NOT NULL DEFAULT 0,
+                    PRIMARY KEY(user_id, period),
+                    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+                )
+                """
             )
 
     def register(self, email_value: str, password_value: str) -> AuthUser:
@@ -237,3 +269,165 @@ class AuthStore:
                 f"DELETE FROM sessions WHERE token_hash = {placeholder}",
                 (token_hash,),
             )
+
+    @staticmethod
+    def _usage_period(timestamp: int | None = None) -> str:
+        return time.strftime("%Y-%m", time.gmtime(timestamp or time.time()))
+
+    def plan_for_user(self, user: AuthUser, timestamp: int | None = None) -> str:
+        """Return ``pro`` only for an active paid subscription.
+
+        ``PAPERMINT_PRO_EMAILS`` is intentionally supported for owner/beta testing
+        before the Stripe webhook is connected. It never comes from the browser.
+        """
+        beta_emails = {
+            item.strip().lower()
+            for item in os.getenv("PAPERMINT_PRO_EMAILS", "").split(",")
+            if item.strip()
+        }
+        if user.email.lower() in beta_emails:
+            return "pro"
+
+        now = int(timestamp or time.time())
+        placeholder = self._placeholder
+        with self._connect() as connection:
+            cursor = connection.cursor()
+            cursor.execute(
+                f"SELECT plan, current_period_end FROM subscriptions "
+                f"WHERE user_id = {placeholder}",
+                (user.id,),
+            )
+            row = cursor.fetchone()
+        if not row or row[0] not in {"monthly", "yearly", "pro"}:
+            return "free"
+        if row[1] is not None and int(row[1]) <= now:
+            return "free"
+        return "pro"
+
+    def set_subscription(
+        self,
+        user_id: str,
+        plan: str,
+        current_period_end: int | None = None,
+    ) -> None:
+        """Upsert subscription state for the future Stripe webhook and tests."""
+        if plan not in {"free", "monthly", "yearly", "pro"}:
+            raise AuthError("Unknown subscription plan.")
+        placeholder = self._placeholder
+        now = int(time.time())
+        with self._connect() as connection:
+            cursor = connection.cursor()
+            if self.postgres:
+                cursor.execute(
+                    """
+                    INSERT INTO subscriptions (user_id, plan, current_period_end, updated_at)
+                    VALUES (%s, %s, %s, %s)
+                    ON CONFLICT (user_id) DO UPDATE SET
+                        plan = EXCLUDED.plan,
+                        current_period_end = EXCLUDED.current_period_end,
+                        updated_at = EXCLUDED.updated_at
+                    """,
+                    (user_id, plan, current_period_end, now),
+                )
+            else:
+                cursor.execute(
+                    """
+                    INSERT INTO subscriptions (user_id, plan, current_period_end, updated_at)
+                    VALUES (?, ?, ?, ?)
+                    ON CONFLICT(user_id) DO UPDATE SET
+                        plan = excluded.plan,
+                        current_period_end = excluded.current_period_end,
+                        updated_at = excluded.updated_at
+                    """,
+                    (user_id, plan, current_period_end, now),
+                )
+
+    def ai_usage(self, user_id: str, timestamp: int | None = None) -> AiUsage:
+        period = self._usage_period(timestamp)
+        placeholder = self._placeholder
+        with self._connect() as connection:
+            cursor = connection.cursor()
+            cursor.execute(
+                f"SELECT documents, questions FROM ai_usage "
+                f"WHERE user_id = {placeholder} AND period = {placeholder}",
+                (user_id, period),
+            )
+            row = cursor.fetchone()
+        return AiUsage(period, int(row[0]), int(row[1])) if row else AiUsage(period, 0, 0)
+
+    def consume_ai_usage(
+        self,
+        user_id: str,
+        *,
+        documents: int = 0,
+        questions: int = 0,
+        document_limit: int,
+        question_limit: int,
+        timestamp: int | None = None,
+    ) -> AiUsage:
+        """Atomically consume monthly AI quota and return the new counters."""
+        if documents < 0 or questions < 0 or not (documents or questions):
+            raise AuthError("Invalid AI usage increment.")
+        period = self._usage_period(timestamp)
+        placeholder = self._placeholder
+        with self._usage_lock:
+            with self._connect() as connection:
+                cursor = connection.cursor()
+                cursor.execute(
+                    f"SELECT documents, questions FROM ai_usage "
+                    f"WHERE user_id = {placeholder} AND period = {placeholder}",
+                    (user_id, period),
+                )
+                row = cursor.fetchone()
+                used_documents, used_questions = (int(row[0]), int(row[1])) if row else (0, 0)
+                new_documents = used_documents + documents
+                new_questions = used_questions + questions
+                if new_documents > document_limit:
+                    raise AuthError("Monthly AI document limit reached.")
+                if new_questions > question_limit:
+                    raise AuthError("Monthly AI question limit reached.")
+
+                if row:
+                    cursor.execute(
+                        f"UPDATE ai_usage SET documents = {placeholder}, questions = {placeholder} "
+                        f"WHERE user_id = {placeholder} AND period = {placeholder}",
+                        (new_documents, new_questions, user_id, period),
+                    )
+                else:
+                    cursor.execute(
+                        f"INSERT INTO ai_usage (user_id, period, documents, questions) "
+                        f"VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder})",
+                        (user_id, period, new_documents, new_questions),
+                    )
+        return AiUsage(period, new_documents, new_questions)
+
+    def refund_ai_usage(
+        self,
+        user_id: str,
+        *,
+        documents: int = 0,
+        questions: int = 0,
+        timestamp: int | None = None,
+    ) -> AiUsage:
+        """Release quota reserved for an AI request that did not complete."""
+        period = self._usage_period(timestamp)
+        placeholder = self._placeholder
+        with self._usage_lock:
+            with self._connect() as connection:
+                cursor = connection.cursor()
+                cursor.execute(
+                    f"SELECT documents, questions FROM ai_usage "
+                    f"WHERE user_id = {placeholder} AND period = {placeholder}",
+                    (user_id, period),
+                )
+                row = cursor.fetchone()
+                used_documents, used_questions = (int(row[0]), int(row[1])) if row else (0, 0)
+                new_documents = max(0, used_documents - max(0, documents))
+                new_questions = max(0, used_questions - max(0, questions))
+                if row:
+                    cursor.execute(
+                        f"UPDATE ai_usage SET documents = {placeholder}, questions = {placeholder} "
+                        f"WHERE user_id = {placeholder} AND period = {placeholder}",
+                        (new_documents, new_questions, user_id, period),
+                    )
+        return AiUsage(period, new_documents, new_questions)

@@ -51,9 +51,32 @@ The local Redis setup protects a single Render instance from overload, but its q
 is not durable across a container restart. Horizontal scaling requires external
 Redis plus shared temporary object storage.
 
+## Ask Octo AI
+
+Ask Octo is the 27th tool and is available only to signed-in Pro users. It extracts
+PDF text locally, uses the existing multilingual OCR pipeline for scanned pages,
+creates a cited summary, and answers up to three questions about the document.
+The default limits are 30 AI documents per billing month, 3 questions per document,
+and 50 pages per document.
+
+Configure these Render environment variables:
+
+```text
+OPENAI_API_KEY=...
+PAPERMINT_AI_MODEL=gpt-5.6-luna
+```
+
+Until Stripe webhooks activate subscriptions in the `subscriptions` table, test Pro
+access by setting `PAPERMINT_PRO_EMAILS` to a comma-separated list of account email
+addresses. Never put `OPENAI_API_KEY` in frontend code or commit it to Git.
+
+The uploaded PDF is deleted immediately after extraction. Extracted text is kept in
+process memory for the question session and removed after 30 minutes; OpenAI requests
+set `store` to `false`.
+
 ## Implemented tools
 
-Merge, split/ranges, compress, editable PDF→Word, PDF→PowerPoint, PDF→Excel, PDF→JPG ZIP, Word/PPT/Excel→PDF via LibreOffice, JPG/images→PDF, text signature, watermark, rotate, HTML→PDF, unlock, protect, organize/reorder, repair/rewrite, PDF/A-2b, page numbers, enhanced scan images→PDF, multilingual OCR→DOCX, text compare, permanent text redaction, crop.
+Merge, split/ranges, compress, editable PDF→Word, PDF→PowerPoint, PDF→Excel, PDF→JPG ZIP, Word/PPT/Excel→PDF via LibreOffice, JPG/images→PDF, text signature, watermark, rotate, HTML→PDF, unlock, protect, organize/reorder, repair/rewrite, PDF/A-2b, page numbers, enhanced scan images→PDF, multilingual OCR→DOCX, text compare, permanent text redaction, crop, and paid Ask Octo AI summaries and document Q&A.
 
 ## Important production notes
 

@@ -34,6 +34,14 @@ from papermint_job_queue import (
 )
 from papermint_extra_engines import OCR_LANGUAGES
 from papermint_auth import AuthError, AuthStore, SESSION_SECONDS
+from papermint_ai import (
+    AskOctoError,
+    AskOctoSessions,
+    ai_is_configured,
+    answer_question,
+    extract_pdf_text,
+    summarize_document,
+)
 
 
 # ============================================================
@@ -49,6 +57,27 @@ AUTH_STORE = AuthStore(
     database_url=os.getenv("DATABASE_URL"),
     sqlite_path=BASE / "data" / "papermint.sqlite3",
 )
+
+AI_DOCUMENT_LIMIT = max(1, int(os.getenv("PAPERMINT_AI_DOCUMENT_LIMIT", "30")))
+AI_QUESTION_LIMIT = max(1, int(os.getenv("PAPERMINT_AI_QUESTION_LIMIT", "90")))
+AI_QUESTIONS_PER_DOCUMENT = max(
+    1,
+    int(os.getenv("PAPERMINT_AI_QUESTIONS_PER_DOCUMENT", "3")),
+)
+AI_SESSIONS = AskOctoSessions(
+    ttl_seconds=int(os.getenv("PAPERMINT_AI_SESSION_SECONDS", "1800")),
+    questions_per_document=AI_QUESTIONS_PER_DOCUMENT,
+)
+AI_RESPONSE_LANGUAGES = {
+    "en": "English",
+    "cs": "Czech",
+    "de": "German",
+    "es": "Spanish",
+    "fr": "French",
+    "zh": "Chinese",
+    "hi": "Hindi",
+    "ja": "Japanese",
+}
 
 MAX_UPLOAD_MB = max(1, int(os.getenv("PAPERMINT_MAX_UPLOAD_MB", "50")))
 MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024
@@ -132,6 +161,7 @@ TOOLS = [
     ("compare", "Compare PDF", "Create a text difference report for two PDFs."),
     ("redact", "Redact PDF", "Search and permanently redact specified text."),
     ("crop", "Crop PDF", "Crop all pages by margins in millimeters."),
+    ("ask-octo", "Ask Octo AI", "Summarize a PDF and ask three cited questions."),
 ]
 
 
@@ -152,6 +182,7 @@ def tools():
             "id": tool_id,
             "name": name,
             "description": description,
+            "pro": tool_id == "ask-octo",
         }
         for tool_id, name, description in TOOLS
     ]
@@ -163,7 +194,13 @@ class AuthCredentials(BaseModel):
 
 
 def _auth_response(user, token: str, request: Request) -> JSONResponse:
-    response = JSONResponse({"authenticated": True, "email": user.email})
+    response = JSONResponse(
+        {
+            "authenticated": True,
+            "email": user.email,
+            "plan": AUTH_STORE.plan_for_user(user),
+        }
+    )
     forwarded_proto = request.headers.get("x-forwarded-proto", "")
     secure = request.url.scheme == "https" or forwarded_proto.split(",")[0].strip() == "https"
     response.set_cookie(
@@ -203,7 +240,11 @@ def current_account(request: Request):
     user = AUTH_STORE.user_for_session(request.cookies.get(AUTH_COOKIE))
     if not user:
         return {"authenticated": False}
-    return {"authenticated": True, "email": user.email}
+    return {
+        "authenticated": True,
+        "email": user.email,
+        "plan": AUTH_STORE.plan_for_user(user),
+    }
 
 
 @app.post("/api/auth/logout")
@@ -212,6 +253,175 @@ def logout_account(request: Request):
     response = JSONResponse({"authenticated": False})
     response.delete_cookie(AUTH_COOKIE, path="/", samesite="lax")
     return response
+
+
+class AskOctoQuestion(BaseModel):
+    session_id: str
+    question: str
+    response_language: str = "en"
+
+
+def _ask_octo_user(request: Request):
+    user = AUTH_STORE.user_for_session(request.cookies.get(AUTH_COOKIE))
+    if not user:
+        raise HTTPException(401, "Sign in to use Ask Octo.")
+    if AUTH_STORE.plan_for_user(user) != "pro":
+        raise HTTPException(403, "Ask Octo is included with a paid plan.")
+    return user
+
+
+def _ai_language(code: str) -> str:
+    language = AI_RESPONSE_LANGUAGES.get((code or "").strip().lower())
+    if not language:
+        raise HTTPException(400, "Choose a supported answer language.")
+    return language
+
+
+def _ai_usage_payload(user_id: str) -> dict:
+    usage = AUTH_STORE.ai_usage(user_id)
+    return {
+        "period": usage.period,
+        "documents_used": usage.documents,
+        "documents_limit": AI_DOCUMENT_LIMIT,
+        "questions_used": usage.questions,
+        "questions_limit": AI_QUESTION_LIMIT,
+    }
+
+
+@app.get("/api/ai/status")
+def ask_octo_status(request: Request):
+    user = AUTH_STORE.user_for_session(request.cookies.get(AUTH_COOKIE))
+    if not user:
+        return {
+            "authenticated": False,
+            "plan": "free",
+            "configured": ai_is_configured(),
+        }
+    return {
+        "authenticated": True,
+        "plan": AUTH_STORE.plan_for_user(user),
+        "configured": ai_is_configured(),
+        "usage": _ai_usage_payload(user.id),
+    }
+
+
+@app.post("/api/ai/document")
+async def ask_octo_document(
+    request: Request,
+    file: UploadFile = File(...),
+    ocr_language: str = Form("eng"),
+    response_language: str = Form("en"),
+):
+    user = _ask_octo_user(request)
+    answer_language = _ai_language(response_language)
+    if not ai_is_configured():
+        raise HTTPException(503, "Ask Octo is not activated yet.")
+    if not file.filename or Path(file.filename).suffix.lower() != ".pdf":
+        raise HTTPException(400, "Ask Octo accepts one PDF file.")
+    if ocr_language not in OCR_LANGUAGES:
+        raise HTTPException(400, "Choose a supported document language.")
+
+    source = save_upload(file)
+    reserved = False
+    try:
+        extracted = await run_in_threadpool(extract_pdf_text, source, ocr_language)
+        try:
+            AUTH_STORE.consume_ai_usage(
+                user.id,
+                documents=1,
+                document_limit=AI_DOCUMENT_LIMIT,
+                question_limit=AI_QUESTION_LIMIT,
+            )
+            reserved = True
+        except AuthError as exc:
+            raise HTTPException(429, str(exc)) from exc
+
+        summary = await run_in_threadpool(
+            summarize_document,
+            extracted.pages,
+            answer_language,
+        )
+        session_id = AI_SESSIONS.create(user.id, extracted.pages)
+        return {
+            "session_id": session_id,
+            "summary": summary,
+            "pages": len(extracted.pages),
+            "ocr_pages": extracted.ocr_pages,
+            "questions_remaining": AI_QUESTIONS_PER_DOCUMENT,
+            "usage": _ai_usage_payload(user.id),
+        }
+    except HTTPException:
+        if reserved:
+            AUTH_STORE.refund_ai_usage(user.id, documents=1)
+        raise
+    except AskOctoError as exc:
+        if reserved:
+            AUTH_STORE.refund_ai_usage(user.id, documents=1)
+        raise HTTPException(400, str(exc)) from exc
+    except Exception as exc:
+        if reserved:
+            AUTH_STORE.refund_ai_usage(user.id, documents=1)
+        raise HTTPException(500, "Ask Octo could not process this PDF.") from exc
+    finally:
+        source.unlink(missing_ok=True)
+
+
+@app.post("/api/ai/question")
+async def ask_octo_question(payload: AskOctoQuestion, request: Request):
+    user = _ask_octo_user(request)
+    answer_language = _ai_language(payload.response_language)
+    if not ai_is_configured():
+        raise HTTPException(503, "Ask Octo is not activated yet.")
+
+    try:
+        session = AI_SESSIONS.get(payload.session_id, user.id)
+        question_number = AI_SESSIONS.reserve_question(payload.session_id, user.id)
+    except AskOctoError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+    quota_reserved = False
+    try:
+        try:
+            AUTH_STORE.consume_ai_usage(
+                user.id,
+                questions=1,
+                document_limit=AI_DOCUMENT_LIMIT,
+                question_limit=AI_QUESTION_LIMIT,
+            )
+            quota_reserved = True
+        except AuthError as exc:
+            raise HTTPException(429, str(exc)) from exc
+
+        answer, source_pages = await run_in_threadpool(
+            answer_question,
+            session["pages"],
+            payload.question,
+            answer_language,
+        )
+        return {
+            "answer": answer,
+            "source_pages": source_pages,
+            "questions_remaining": max(
+                0,
+                AI_QUESTIONS_PER_DOCUMENT - question_number,
+            ),
+            "usage": _ai_usage_payload(user.id),
+        }
+    except HTTPException:
+        AI_SESSIONS.release_question(payload.session_id, user.id)
+        if quota_reserved:
+            AUTH_STORE.refund_ai_usage(user.id, questions=1)
+        raise
+    except AskOctoError as exc:
+        AI_SESSIONS.release_question(payload.session_id, user.id)
+        if quota_reserved:
+            AUTH_STORE.refund_ai_usage(user.id, questions=1)
+        raise HTTPException(400, str(exc)) from exc
+    except Exception as exc:
+        AI_SESSIONS.release_question(payload.session_id, user.id)
+        if quota_reserved:
+            AUTH_STORE.refund_ai_usage(user.id, questions=1)
+        raise HTTPException(500, "Ask Octo could not answer this question.") from exc
 
 
 # ============================================================
