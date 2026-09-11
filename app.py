@@ -140,6 +140,11 @@ def home():
     return (BASE / "static" / "index.html").read_text(encoding="utf-8")
 
 
+@app.get("/terms", response_class=HTMLResponse)
+def terms():
+    return (BASE / "static" / "terms.html").read_text(encoding="utf-8")
+
+
 @app.get("/api/tools")
 def tools():
     return [

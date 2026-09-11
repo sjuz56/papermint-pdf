@@ -1,6 +1,7 @@
 let authMode = 'login';
 let currentAccount = null;
 let selectedPlan = null;
+const accountT = (key, variables) => window.PaperMintI18n?.t(key, variables) || key;
 
 const authModal = document.getElementById('authModal');
 const signInButton = document.getElementById('signInButton');
@@ -16,14 +17,14 @@ function setAuthMode(mode) {
 
   const registering = authMode === 'register';
   document.getElementById('authTitle').textContent = registering
-    ? 'Create your account'
-    : 'Welcome back';
+    ? accountT('auth.createTitle')
+    : accountT('auth.welcome');
   document.getElementById('authSubtitle').textContent = registering
-    ? 'Create an account to manage your subscription.'
-    : 'Sign in to manage your PaperMint account.';
+    ? accountT('auth.registerSubtitle')
+    : accountT('auth.loginSubtitle');
   document.getElementById('authSubmit').textContent = registering
-    ? 'Create account'
-    : 'Sign in';
+    ? accountT('auth.createAccount')
+    : accountT('auth.signIn');
   document.getElementById('authPassword').autocomplete = registering
     ? 'new-password'
     : 'current-password';
@@ -39,11 +40,11 @@ function renderAccount() {
     signedOut.classList.add('hidden');
     signedIn.classList.remove('hidden');
     document.getElementById('accountEmail').textContent = currentAccount.email;
-    signInButton.textContent = 'Account';
+    signInButton.textContent = accountT('auth.account');
   } else {
     signedOut.classList.remove('hidden');
     signedIn.classList.add('hidden');
-    signInButton.textContent = 'Sign in';
+    signInButton.textContent = accountT('auth.signIn');
     setAuthMode(authMode);
   }
 }
@@ -94,8 +95,8 @@ authForm?.addEventListener('submit', async event => {
   event.preventDefault();
   authStatus.classList.remove('error');
   authStatus.textContent = authMode === 'register'
-    ? 'Creating account…'
-    : 'Signing in…';
+    ? accountT('auth.creating')
+    : accountT('auth.signingIn');
 
   const fields = new FormData(authForm);
   const endpoint = authMode === 'register'
@@ -114,7 +115,7 @@ authForm?.addEventListener('submit', async event => {
     const data = await readJson(response);
 
     if (!response.ok) {
-      throw new Error(data.detail || 'Could not sign in.');
+      throw new Error(data.detail || accountT('auth.failed'));
     }
 
     currentAccount = data;
@@ -174,3 +175,7 @@ document.addEventListener('keydown', event => {
 
 setAuthMode('login');
 loadAccount();
+
+window.addEventListener('papermint:languagechange', () => {
+  renderAccount();
+});

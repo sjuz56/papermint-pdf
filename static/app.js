@@ -1,5 +1,9 @@
 let tools = [];
 let selectedFiles = [];
+let activeTool = null;
+
+const i18n = window.PaperMintI18n;
+const t = (key, variables) => i18n?.t(key, variables) || key;
 
 const multiFileTools = new Set([
   'merge',
@@ -53,7 +57,7 @@ async function init() {
     });
 
     if (!r.ok) {
-      throw new Error('Could not load tools.');
+      throw new Error(t('error.loadTools'));
     }
 
     tools = await r.json();
@@ -74,17 +78,19 @@ function render(list) {
 
   if (!g) return;
 
-  g.innerHTML = list.map((t, i) => `
+  const localized = list.map(tool => i18n?.translateTool(tool) || tool);
+
+  g.innerHTML = localized.map((tool, i) => `
     <article
       class="card"
       data-tool-index="${i}"
     >
       <div class="icon">
-        ${labels[t.id] || 'PDF'}
+        ${labels[tool.id] || 'PDF'}
       </div>
 
-      <h3>${t.name}</h3>
-      <p>${t.description}</p>
+      <h3>${tool.name}</h3>
+      <p>${tool.description}</p>
     </article>
   `).join('');
 
@@ -100,11 +106,12 @@ if (search) {
     const q = e.target.value.toLowerCase();
 
     render(
-      tools.filter(t =>
-        (t.name + ' ' + t.description)
+      tools.filter(tool => {
+        const localized = i18n?.translateTool(tool) || tool;
+        return (localized.name + ' ' + localized.description)
           .toLowerCase()
-          .includes(q)
-      )
+          .includes(q);
+      })
     );
   });
 }
@@ -136,7 +143,7 @@ function renderSelectedFiles() {
   if (!names) return;
 
   if (!selectedFiles.length) {
-    names.textContent = 'No files selected';
+    names.textContent = t('upload.empty');
     return;
   }
 
@@ -158,26 +165,28 @@ function addSelectedFiles(files) {
   renderSelectedFiles();
 }
 
-function openTool(t) {
+function openTool(tool) {
+  activeTool = tool;
+  const localizedTool = i18n?.translateTool(tool) || tool;
   document
     .getElementById('modal')
     .classList.remove('hidden');
 
   document
     .getElementById('modalTitle')
-    .textContent = t.name;
+    .textContent = localizedTool.name;
 
   document
     .getElementById('modalDesc')
-    .textContent = t.description;
+    .textContent = localizedTool.description;
 
   document
     .getElementById('toolId')
-    .value = t.id;
+    .value = tool.id;
 
   document
     .getElementById('modalIcon')
-    .textContent = labels[t.id] || 'PDF';
+    .textContent = labels[tool.id] || 'PDF';
 
   document
     .getElementById('status')
@@ -188,14 +197,14 @@ function openTool(t) {
   const fileInput = document.getElementById('files');
 
   fileInput.value = '';
-  fileInput.multiple = multiFileTools.has(t.id);
-  fileInput.accept = acceptedFiles[t.id] || '.pdf,application/pdf';
+  fileInput.multiple = multiFileTools.has(tool.id);
+  fileInput.accept = acceptedFiles[tool.id] || '.pdf,application/pdf';
 
   renderSelectedFiles();
 
   let x = '';
 
-  if (t.id === 'pdf-word') {
+  if (tool.id === 'pdf-word') {
     x = `
       <input
         type="hidden"
@@ -205,33 +214,30 @@ function openTool(t) {
 
       <div class="field">
         <small>
-          Creates an editable Word document
-          while preserving the original layout
-          as closely as possible.
+          ${t('hint.pdfWord')}
         </small>
       </div>
     `;
   }
 
-  if (t.id === 'pdf-ppt') {
+  if (tool.id === 'pdf-ppt') {
     x += `
       <div class="field">
         <small>
-          Each PDF page becomes one sharp PowerPoint slide.
-          The original appearance is preserved, but page content is not editable text.
+          ${t('hint.pdfPpt')}
         </small>
       </div>
     `;
   }
 
-  if (t.id === 'pdf-jpg') {
-    x += `<div class="field"><small>Downloads all pages as numbered JPG files in one ZIP archive.</small></div>`;
+  if (tool.id === 'pdf-jpg') {
+    x += `<div class="field"><small>${t('hint.pdfJpg')}</small></div>`;
   }
 
-  if (t.id === 'ocr') {
+  if (tool.id === 'ocr') {
     x += `
       <div class="field">
-        <label>Document language</label>
+        <label>${t('form.documentLanguage')}</label>
         <select name="ocr_language">
           <option value="eng">English</option>
           <option value="ces">Čeština</option>
@@ -253,26 +259,26 @@ function openTool(t) {
           <option value="ara">العربية</option>
         </select>
       </div>
-      <div class="field"><small>Recognizes text in scanned pages and creates an editable Word document.</small></div>
+      <div class="field"><small>${t('hint.ocr')}</small></div>
     `;
   }
 
-  if (t.id === 'html-pdf') {
-    x += `<div class="field"><small>For privacy and security, external images, stylesheets and web fonts are not downloaded.</small></div>`;
+  if (tool.id === 'html-pdf') {
+    x += `<div class="field"><small>${t('hint.html')}</small></div>`;
   }
 
-  if (t.id === 'pdfa') {
-    x += `<div class="field"><small>Creates a PDF/A-2b archival document with an embedded sRGB output profile.</small></div>`;
+  if (tool.id === 'pdfa') {
+    x += `<div class="field"><small>${t('hint.pdfa')}</small></div>`;
   }
 
-  if (t.id === 'protect') {
+  if (tool.id === 'protect') {
     x += `
       <div class="field">
-        <label>Password</label>
+        <label>${t('form.password')}</label>
         <input
           name="password"
           type="password"
-          placeholder="At least 6 characters"
+          placeholder="${t('form.passwordHint')}"
           minlength="6"
           maxlength="128"
           autocomplete="new-password"
@@ -281,11 +287,11 @@ function openTool(t) {
       </div>
 
       <div class="field">
-        <label>Confirm password</label>
+        <label>${t('form.confirmPassword')}</label>
         <input
           name="password_confirm"
           type="password"
-          placeholder="Enter the password again"
+          placeholder="${t('form.confirmPasswordHint')}"
           minlength="6"
           maxlength="128"
           autocomplete="new-password"
@@ -295,21 +301,20 @@ function openTool(t) {
 
       <div class="field">
         <small>
-          The protected PDF will require this password every time it is opened.
-          The password is used only for this protection job.
+          ${t('hint.protect')}
         </small>
       </div>
     `;
   }
 
-  if (t.id === 'unlock') {
+  if (tool.id === 'unlock') {
     x += `
       <div class="field">
-        <label>PDF password</label>
+        <label>${t('form.pdfPassword')}</label>
         <input
           name="password"
           type="password"
-          placeholder="Enter the current password"
+          placeholder="${t('form.pdfPasswordHint')}"
           maxlength="128"
           autocomplete="current-password"
           required
@@ -318,79 +323,77 @@ function openTool(t) {
 
       <div class="field">
         <small>
-          Enter the password currently required to open this PDF.
-          The downloaded copy will no longer require it.
+          ${t('hint.unlock')}
         </small>
       </div>
     `;
   }
 
-  if (['watermark', 'redact', 'sign'].includes(t.id)) {
+  if (['watermark', 'redact', 'sign'].includes(tool.id)) {
     x += field(
-      t.id === 'redact'
-        ? 'Text to permanently redact'
-        : t.id === 'sign'
-          ? 'Signature text'
-          : 'Watermark text',
+      tool.id === 'redact'
+        ? t('form.redactText')
+        : tool.id === 'sign'
+          ? t('form.signatureText')
+          : t('form.watermarkText'),
       'text',
       'text',
-      t.id === 'watermark'
-        ? 'CONFIDENTIAL'
+      tool.id === 'watermark'
+        ? t('form.confidential')
         : ''
     );
   }
 
-  if (t.id === 'sign') {
+  if (tool.id === 'sign') {
     x += `
       <div class="field">
         <small>
-          Adds a visible text signature. This is not a certificate-based digital signature.
-          Positions are measured from the top-left corner of the page.
+          ${t('hint.sign')}
         </small>
       </div>
     `;
   }
 
-  if (t.id === 'watermark') {
+  if (tool.id === 'watermark') {
     x += `
       <div class="field">
         <small>
-          The watermark is placed diagonally across every page with light transparency.
+          ${t('hint.watermark')}
         </small>
       </div>
     `;
   }
 
-  if (['split', 'organize'].includes(t.id)) {
+  if (['split', 'organize'].includes(tool.id)) {
     x += field(
-      t.id === 'organize'
-        ? 'New page order'
-        : 'Pages / ranges',
+      tool.id === 'organize'
+        ? t('form.pageOrder')
+        : t('form.pagesRanges'),
       'pages',
       'text',
-      t.id === 'organize'
+      tool.id === 'organize'
         ? '3,1,2 or 5-3'
         : '1-3,5'
     );
   }
 
-  if (t.id === 'rotate') {
+  if (tool.id === 'rotate') {
     x += `
       <div class="field">
-        <label>Rotation</label>
+        <label>${t('form.rotation')}</label>
 
         <select name="rotation">
-          <option value="90">90° right</option>
-          <option value="270">90° left</option>
+          <option value="90">${t('form.right')}</option>
+          <option value="270">${t('form.left')}</option>
           <option value="180">180°</option>
         </select>
       </div>
     `;
   }
 
-  if (t.id === 'crop') {
+  if (tool.id === 'crop') {
     x += field(
-      'Crop margin (mm)',
+      t('form.cropMargin'),
       'margin',
       'number',
       '10',
@@ -398,47 +401,47 @@ function openTool(t) {
     );
   }
 
-  if (t.id === 'page-numbers') {
+  if (tool.id === 'page-numbers') {
     x += `
       <div class="field">
-        <label>Start number</label>
+        <label>${t('form.startNumber')}</label>
         <input name="page_number_start" type="number" value="1" min="0" max="1000000" required>
       </div>
 
       <div class="field">
-        <label>Format</label>
+        <label>${t('form.format')}</label>
         <select name="page_number_format">
           <option value="number">1</option>
-          <option value="page">Page 1</option>
-          <option value="page-total">Page 1 of 10</option>
+          <option value="page">${t('form.pageOne')}</option>
+          <option value="page-total">${t('form.pageTotal')}</option>
         </select>
       </div>
 
       <div class="field">
-        <label>Position</label>
+        <label>${t('form.position')}</label>
         <select name="page_number_position">
-          <option value="bottom-center">Bottom center</option>
-          <option value="bottom-left">Bottom left</option>
-          <option value="bottom-right">Bottom right</option>
-          <option value="top-center">Top center</option>
-          <option value="top-left">Top left</option>
-          <option value="top-right">Top right</option>
+          <option value="bottom-center">${t('form.bottomCenter')}</option>
+          <option value="bottom-left">${t('form.bottomLeft')}</option>
+          <option value="bottom-right">${t('form.bottomRight')}</option>
+          <option value="top-center">${t('form.topCenter')}</option>
+          <option value="top-left">${t('form.topLeft')}</option>
+          <option value="top-right">${t('form.topRight')}</option>
         </select>
       </div>
 
       <div class="field">
-        <label>Cover page</label>
+        <label>${t('form.coverPage')}</label>
         <label style="display:flex;align-items:center;gap:8px;font-weight:400">
           <input name="page_number_skip_first" type="checkbox" value="true" style="width:auto;padding:0;margin:0">
-          <span>Skip the first page</span>
+          <span>${t('form.skipFirst')}</span>
         </label>
       </div>
     `;
   }
 
-  if (t.id === 'sign') {
+  if (tool.id === 'sign') {
     x += field(
-      'Page',
+      t('form.page'),
       'signature_page',
       'number',
       '1',
@@ -446,7 +449,7 @@ function openTool(t) {
     );
 
     x += field(
-      'X position (mm)',
+      t('form.xPosition'),
       'signature_x',
       'number',
       '30',
@@ -454,7 +457,7 @@ function openTool(t) {
     );
 
     x += field(
-      'Y position (mm)',
+      t('form.yPosition'),
       'signature_y',
       'number',
       '30',
@@ -512,7 +515,7 @@ async function downloadBlobResponse(response, filename) {
   const blob = await response.blob();
 
   if (!blob || blob.size === 0) {
-    throw new Error('Downloaded file is empty.');
+    throw new Error(t('error.emptyDownload'));
   }
 
   const url = URL.createObjectURL(blob);
@@ -549,7 +552,7 @@ if (form) {
       fd.append('files', file);
     });
 
-    s.textContent = 'Processing…';
+    s.textContent = t('status.processing');
 
     try {
       if (tool === 'protect') {
@@ -558,33 +561,33 @@ if (form) {
 
         if (password.length < 6) {
           throw new Error(
-            'Password must contain at least 6 characters.'
+            t('error.passwordLength')
           );
         }
 
         if (password !== confirmation) {
-          throw new Error('Passwords do not match.');
+          throw new Error(t('error.passwordMatch'));
         }
       }
 
       if (tool === 'unlock' && !fd.get('password')) {
-        throw new Error('Please enter the PDF password.');
+        throw new Error(t('error.pdfPassword'));
       }
 
       if (tool === 'sign' && !(fd.get('text') || '').trim()) {
-        throw new Error('Please enter the signature text.');
+        throw new Error(t('error.signature'));
       }
 
       if (tool === 'watermark' && !(fd.get('text') || '').trim()) {
-        throw new Error('Please enter the watermark text.');
+        throw new Error(t('error.watermark'));
       }
 
       if (tool === 'redact' && !(fd.get('text') || '').trim()) {
-        throw new Error('Please enter the text to redact.');
+        throw new Error(t('error.redact'));
       }
 
       if (!selectedFiles.length) {
-        throw new Error('Please choose a file.');
+        throw new Error(t('error.noFiles'));
       }
 
       // =========================================
@@ -593,7 +596,7 @@ if (form) {
 
       if (tool === 'pdf-word') {
         if (!selectedFiles.length) {
-          throw new Error('Please choose a PDF file.');
+          throw new Error(t('error.noPdf'));
         }
 
         const upload = new FormData();
@@ -609,7 +612,7 @@ if (form) {
         );
 
         if (!startResponse.ok) {
-          let message = 'Conversion failed';
+          let message = t('error.conversion');
 
           try {
             const data = await startResponse.json();
@@ -623,10 +626,10 @@ if (form) {
         const jobId = startData.job_id;
 
         if (!jobId) {
-          throw new Error('Missing conversion job ID.');
+          throw new Error(t('error.missingJob'));
         }
 
-        s.textContent = 'Converting PDF to editable Word…';
+        s.textContent = t('status.convertingWord');
 
         while (true) {
           await new Promise(resolve =>
@@ -642,7 +645,7 @@ if (form) {
 
           if (!statusResponse.ok) {
             throw new Error(
-              'Could not check conversion status.'
+              t('error.status')
             );
           }
 
@@ -650,7 +653,7 @@ if (form) {
 
           if (statusData.status === 'error') {
             throw new Error(
-              statusData.error || 'Conversion failed.'
+              statusData.error || t('error.conversion')
             );
           }
 
@@ -659,7 +662,7 @@ if (form) {
           }
         }
 
-        s.textContent = 'Preparing Word download…';
+        s.textContent = t('status.preparingWord');
 
         const downloadResponse = await fetch(
           `/api/pdf-word/download/${jobId}`,
@@ -670,7 +673,7 @@ if (form) {
         );
 
         if (!downloadResponse.ok) {
-          let message = 'Download failed';
+          let message = t('error.download');
 
           try {
             const data = await downloadResponse.json();
@@ -688,7 +691,7 @@ if (form) {
 
           throw new Error(
             data?.detail ||
-            'Server returned JSON instead of DOCX.'
+            t('error.serverJson')
           );
         }
 
@@ -697,8 +700,7 @@ if (form) {
           'converted.docx'
         );
 
-        s.textContent =
-          'Done. Word document downloaded.';
+        s.textContent = t('status.doneWord');
 
         return;
       }
@@ -713,7 +715,7 @@ if (form) {
       });
 
       if (!startResponse.ok) {
-        let message = 'Could not start processing';
+        let message = t('error.processing');
 
         try {
           const data = await startResponse.json();
@@ -727,15 +729,15 @@ if (form) {
       const jobId = startData.job_id;
 
       if (!jobId) {
-        throw new Error('Missing processing job ID.');
+        throw new Error(t('error.missingJob'));
       }
 
       while (true) {
         const position = startData.queue_position;
 
         s.textContent = position
-          ? `Waiting in queue (position ${position})…`
-          : 'Waiting in queue…';
+          ? t('status.waitingPosition', {position})
+          : t('status.waiting');
 
         await new Promise(resolve =>
           setTimeout(resolve, 1500)
@@ -749,7 +751,7 @@ if (form) {
         );
 
         if (!statusResponse.ok) {
-          let message = 'Could not check processing status';
+          let message = t('error.status');
 
           try {
             const data = await statusResponse.json();
@@ -763,7 +765,7 @@ if (form) {
 
         if (statusData.status === 'error') {
           throw new Error(
-            statusData.error || 'Processing failed.'
+            statusData.error || t('error.processing')
           );
         }
 
@@ -772,14 +774,14 @@ if (form) {
         }
 
         if (statusData.status === 'processing') {
-          s.textContent = 'Processing document…';
+          s.textContent = t('status.processing');
         } else if (statusData.queue_position) {
           startData.queue_position =
             statusData.queue_position;
         }
       }
 
-      s.textContent = 'Preparing download…';
+      s.textContent = t('status.downloading');
 
       const downloadResponse = await fetch(
         `/api/jobs/download/${jobId}`,
@@ -790,7 +792,7 @@ if (form) {
       );
 
       if (!downloadResponse.ok) {
-        let message = 'Download failed';
+        let message = t('error.download');
 
         try {
           const data = await downloadResponse.json();
@@ -818,15 +820,26 @@ if (form) {
         name
       );
 
-      s.textContent =
-        'Done. Your file has been prepared.';
+      s.textContent = t('status.done');
     } catch (err) {
       console.error(err);
 
       s.textContent =
-        'Error: ' + err.message;
+        `${t('error.prefix')}: ${err.message}`;
     }
   });
 }
+
+window.addEventListener('papermint:languagechange', () => {
+  render(tools);
+  renderSelectedFiles();
+
+  if (activeTool && !document.getElementById('modal')?.classList.contains('hidden')) {
+    const preservedFiles = [...selectedFiles];
+    openTool(activeTool);
+    selectedFiles = preservedFiles;
+    renderSelectedFiles();
+  }
+});
 
 init();

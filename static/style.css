@@ -29,6 +29,7 @@ body {
 }
 button, input, select, textarea { font: inherit; }
 a { color: inherit; text-decoration: none; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; margin: -1px; padding: 0; border: 0; clip: rect(0 0 0 0); white-space: nowrap; }
 
 .topbar {
   position: sticky;
@@ -58,6 +59,20 @@ a { color: inherit; text-decoration: none; }
 nav { display: flex; gap: 30px; color: #425b7c; font-size: 14px; font-weight: 700; }
 nav a { transition: color .18s ease; }
 nav a:hover { color: var(--orange); }
+.top-actions { display: flex; align-items: center; gap: 10px; }
+.language-picker select {
+  min-width: 66px;
+  padding: 9px 28px 9px 11px;
+  border: 1px solid #bcdcf2;
+  border-radius: 12px;
+  outline: none;
+  background: white;
+  color: var(--navy);
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.language-picker select:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(53, 168, 239, .12); }
 .ghost {
   max-width: 210px;
   overflow: hidden;
@@ -206,12 +221,15 @@ main { max-width: 1180px; margin: auto; padding: 60px 22px 100px; }
 .dialog h2 { margin: 14px 0 5px; color: var(--navy); }
 .dialog > p { margin-top: 0; color: var(--muted); }
 .drop {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 5px;
   margin: 20px 0;
-  padding: 32px;
+  min-height: 218px;
+  overflow: hidden;
+  padding: 42px 32px;
   border: 2px dashed #acd8f2;
   border-radius: 18px;
   background: linear-gradient(145deg, #f9fdff, var(--blue-pale));
@@ -219,7 +237,21 @@ main { max-width: 1180px; margin: auto; padding: 60px 22px 100px; }
   cursor: pointer;
   transition: .18s ease;
 }
+.drop-mascot {
+  position: absolute;
+  z-index: 0;
+  top: 50%;
+  left: 50%;
+  width: min(48%, 225px);
+  height: auto;
+  opacity: .105;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+  transition: opacity .18s ease, transform .18s ease;
+}
+.drop-copy { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; gap: 5px; text-shadow: 0 1px 10px rgba(255, 255, 255, .95); }
 .drop:hover, .drop.drag { border-color: var(--orange); background: var(--orange-pale); }
+.drop:hover .drop-mascot, .drop.drag .drop-mascot { opacity: .16; transform: translate(-50%, -50%) scale(1.035); }
 .drop span, .drop small { color: var(--muted); }
 .field { display: grid; gap: 7px; margin: 12px 0; }
 .field label { color: var(--navy); font-size: 13px; font-weight: 800; }
@@ -246,6 +278,30 @@ main { max-width: 1180px; margin: auto; padding: 60px 22px 100px; }
 .privacy h2 { position: relative; z-index: 1; margin-top: 0; font-size: 30px; }
 .privacy p { position: relative; z-index: 1; max-width: 730px; margin-bottom: 0; color: #dceeff; line-height: 1.7; }
 footer { display: flex; justify-content: space-between; padding: 29px 5vw; border-top: 1px solid var(--line); background: white; color: #63758e; font-size: 13px; }
+.footer-links { display: flex; flex-wrap: wrap; gap: 18px; }
+.footer-links a:hover { color: var(--orange); }
+
+.legal-page { min-height: 100vh; }
+.legal-topbar { position: static; }
+.legal-shell { max-width: 920px; margin: 0 auto; padding: 64px 22px 90px; }
+.legal-hero { margin-bottom: 28px; padding: 38px; border: 1px solid var(--line); border-radius: 26px; background: linear-gradient(145deg, #fff 50%, var(--blue-pale)); box-shadow: 0 16px 42px rgba(18, 51, 107, .08); }
+.legal-hero h1 { margin: 14px 0 12px; color: var(--navy); font-size: clamp(36px, 6vw, 54px); letter-spacing: -.045em; }
+.legal-hero p { max-width: 720px; margin: 0; color: var(--muted); line-height: 1.7; }
+.legal-summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 24px 0 0; }
+.legal-summary div { padding: 15px; border: 1px solid #cbe8f9; border-radius: 14px; background: rgba(255, 255, 255, .8); }
+.legal-summary strong { display: block; margin-bottom: 4px; color: var(--navy); font-size: 13px; }
+.legal-summary span { color: var(--muted); font-size: 12px; line-height: 1.4; }
+.legal-notice { margin: 0 0 22px; padding: 17px 20px; border: 1px solid #ffd0aa; border-radius: 16px; background: var(--orange-pale); color: #8a3d08; font-size: 14px; line-height: 1.55; }
+.legal-content { padding: 38px; border: 1px solid var(--line); border-radius: 26px; background: white; box-shadow: 0 16px 42px rgba(18, 51, 107, .07); }
+.legal-content section + section { padding-top: 12px; }
+.legal-content h2 { margin: 28px 0 10px; color: var(--navy); font-size: 23px; letter-spacing: -.02em; }
+.legal-content h3 { margin: 22px 0 8px; color: var(--navy); font-size: 17px; }
+.legal-content p, .legal-content li { color: #506782; font-size: 14px; line-height: 1.72; }
+.legal-content ul, .legal-content ol { padding-left: 22px; }
+.legal-content a { color: var(--blue-dark); text-decoration: underline; text-underline-offset: 2px; }
+.legal-content .important { padding: 18px 20px; border-left: 4px solid var(--orange); border-radius: 0 14px 14px 0; background: #fff8f2; color: #74401e; }
+.legal-content .operator-placeholder { padding: 18px 20px; border: 1px dashed var(--orange); border-radius: 14px; background: #fffaf6; }
+.withdrawal-template { padding: 20px; border: 1px solid var(--line); border-radius: 14px; background: #f9fcff; }
 
 @media (max-width: 980px) {
   .grid { grid-template-columns: repeat(3, 1fr); }
@@ -259,9 +315,12 @@ footer { display: flex; justify-content: space-between; padding: 29px 5vw; borde
 }
 @media (max-width: 560px) {
   .topbar { height: 92px; padding: 0 17px; }
-  .brand { font-size: 21px; }
-  .brand-mascot { width: 120px; height: 80px; }
-  .ghost { padding: 9px 13px; }
+  .brand { gap: 6px; font-size: 19px; }
+  .brand-mascot { width: 58px; height: 58px; }
+  .top-actions { gap: 6px; }
+  .language-picker select { min-width: 58px; padding: 8px 24px 8px 8px; }
+  .ghost { padding: 9px 10px; font-size: 12px; }
+  .top-actions .ghost { max-width: 86px; padding-inline: 8px; }
   .hero { min-height: auto; padding: 48px 18px 45px; }
   .hero h1 { font-size: 45px; }
   .hero p { font-size: 16px; }
@@ -271,7 +330,13 @@ footer { display: flex; justify-content: space-between; padding: 29px 5vw; borde
   .section-title h2 { font-size: 31px; }
   .section-title input { width: 100%; }
   .grid { grid-template-columns: 1fr; }
+  .dialog { padding: 24px 18px; }
+  .drop { min-height: 190px; padding: 36px 18px; }
+  .drop-mascot { width: min(58%, 190px); }
   .privacy { margin: 0 17px 54px; padding: 34px 27px; border-radius: 23px; }
   .privacy::after { opacity: .45; }
   footer { flex-direction: column; gap: 8px; }
+  .legal-shell { padding: 34px 16px 64px; }
+  .legal-hero, .legal-content { padding: 24px 20px; border-radius: 20px; }
+  .legal-summary { grid-template-columns: 1fr; }
 }

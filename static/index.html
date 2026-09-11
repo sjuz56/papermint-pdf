@@ -10,25 +10,40 @@
 <body>
 <header class="topbar">
   <a class="brand" href="#"><img class="brand-mascot" src="/static/assets/octopus-mascot-transparent.png" alt="" width="150" height="100">Paper<span>Mint</span></a>
-  <nav><a href="#tools">PDF tools</a><a href="#pricing">Pricing</a><a href="#privacy">Privacy</a></nav>
-  <button class="ghost" id="signInButton" type="button">Sign in</button>
+  <nav><a href="#tools" data-i18n="nav.tools">PDF tools</a><a href="#pricing" data-i18n="nav.pricing">Pricing</a><a href="#privacy" data-i18n="nav.privacy">Privacy</a></nav>
+  <div class="top-actions">
+    <label class="language-picker" for="languageSelect">
+      <span class="sr-only" data-i18n="language.label">Language</span>
+      <select id="languageSelect" aria-label="Language">
+        <option value="en">EN</option>
+        <option value="cs">CZ</option>
+        <option value="de">DE</option>
+        <option value="es">ES</option>
+        <option value="fr">FR</option>
+        <option value="zh">中文</option>
+        <option value="hi">हिन्दी</option>
+        <option value="ja">日本語</option>
+      </select>
+    </label>
+    <button class="ghost" id="signInButton" type="button" data-i18n="auth.signIn">Sign in</button>
+  </div>
 </header>
 <section class="hero">
   <div class="hero-copy">
-    <div class="pill">Fast • private • simple</div>
-    <h1>Every PDF tool you need. <span>Handled with ease.</span></h1>
-    <p>Convert, organize, compress, sign, protect and OCR documents directly in your browser workflow.</p>
-    <div class="hero-trust"><span>26 useful tools</span><span>Files deleted automatically</span><span>No account for Free</span></div>
+    <div class="pill" data-i18n="hero.pill">Fast • private • simple</div>
+    <h1><span class="hero-title-main" data-i18n="hero.title">Every PDF tool you need.</span> <span data-i18n="hero.accent">Handled with ease.</span></h1>
+    <p data-i18n="hero.description">Convert, organize, compress, sign, protect and OCR documents directly in your browser workflow.</p>
+    <div class="hero-trust"><span data-i18n="hero.tools">26 useful tools</span><span data-i18n="hero.deleted">Files deleted automatically</span><span data-i18n="hero.noAccount">No account for Free</span></div>
   </div>
 </section>
 <main id="tools">
-  <div class="section-title"><div><h2>All PDF tools</h2><p>Every tool is listed here. Pick one and process your document.</p></div><input id="search" placeholder="Search all 26 tools…"/></div>
+  <div class="section-title"><div><h2 data-i18n="tools.title">All PDF tools</h2><p data-i18n="tools.subtitle">Every tool is listed here. Pick one and process your document.</p></div><input id="search" data-i18n-placeholder="tools.search" placeholder="Search all 26 tools…"/></div>
   <div id="grid" class="grid"></div>
 </main>
 
 <div id="modal" class="modal hidden">
   <div class="dialog">
-    <button class="close" onclick="closeModal()">×</button>
+    <button class="close" onclick="closeModal()" type="button" data-i18n-aria-label="common.close" aria-label="Close">×</button>
     <div class="tool-icon" id="modalIcon">PDF</div>
     <h2 id="modalTitle">Tool</h2>
     <p id="modalDesc"></p>
@@ -36,11 +51,14 @@
       <input type="hidden" name="tool" id="toolId"/>
       <label class="drop" id="dropZone">
         <input id="files" name="files" type="file" multiple hidden/>
-        <strong>Drop files here</strong><span>or click to browse</span>
-        <small id="fileNames">No files selected</small>
+        <img class="drop-mascot" src="/static/assets/octopus-mascot-transparent.png" alt="" aria-hidden="true">
+        <span class="drop-copy">
+          <strong data-i18n="upload.drop">Drop files here</strong><span data-i18n="upload.browse">or click to browse</span>
+          <small id="fileNames" data-i18n="upload.empty">No files selected</small>
+        </span>
       </label>
       <div id="extra"></div>
-      <button class="primary full" type="submit">Process file</button>
+      <button class="primary full" type="submit" data-i18n="upload.process">Process file</button>
       <div id="status"></div>
     </form>
   </div>
@@ -48,66 +66,66 @@
 
 <section id="pricing" class="pricing">
   <div class="pricing-heading">
-    <div class="pill">Simple pricing</div>
-    <h2>Choose the plan that works for you</h2>
-    <p>Start free, then upgrade for higher limits whenever you need them.</p>
+    <div class="pill" data-i18n="pricing.pill">Simple pricing</div>
+    <h2 data-i18n="pricing.title">Choose the plan that works for you</h2>
+    <p data-i18n="pricing.subtitle">Start free, then upgrade for higher limits whenever you need them.</p>
   </div>
   <div class="pricing-grid">
     <article class="price-card">
-      <h3>Free</h3>
-      <p class="price"><strong>€0</strong><span>forever</span></p>
+      <h3 data-i18n="pricing.free">Free</h3>
+      <p class="price"><strong>€0</strong><span data-i18n="pricing.forever">forever</span></p>
       <ul class="plan-features">
-        <li>All 26 PDF tools</li>
-        <li>2 PDF tasks per day</li>
-        <li>Files up to 10 MB</li>
-        <li>Standard processing queue</li>
-        <li>No account or card required</li>
+        <li data-i18n="pricing.allTools">All 26 PDF tools</li>
+        <li data-i18n="pricing.twoTasks">2 PDF tasks per day</li>
+        <li data-i18n="pricing.tenMb">Files up to 10 MB</li>
+        <li data-i18n="pricing.standardQueue">Standard processing queue</li>
+        <li data-i18n="pricing.noCard">No account or card required</li>
       </ul>
-      <button class="price-button" type="button" data-plan="free">Use tools for free</button>
+      <button class="price-button" type="button" data-plan="free" data-i18n="pricing.useFree">Use tools for free</button>
     </article>
     <article class="price-card">
-      <h3>Monthly</h3>
-      <p class="price"><strong>€7</strong><span>/ month</span></p>
+      <h3 data-i18n="pricing.monthly">Monthly</h3>
+      <p class="price"><strong>€7</strong><span data-i18n="pricing.perMonth">/ month</span></p>
       <ul class="plan-features">
-        <li>All 26 PDF tools</li>
-        <li>Larger files and higher usage limits</li>
-        <li>Faster processing queue</li>
-        <li>Cancel anytime</li>
+        <li data-i18n="pricing.allTools">All 26 PDF tools</li>
+        <li data-i18n="pricing.higherLimits">Larger files and higher usage limits</li>
+        <li data-i18n="pricing.fastQueue">Faster processing queue</li>
+        <li data-i18n="pricing.cancel">Cancel anytime</li>
       </ul>
-      <button class="price-button" type="button" data-plan="monthly">Choose monthly</button>
+      <button class="price-button" type="button" data-plan="monthly" data-i18n="pricing.chooseMonthly">Choose monthly</button>
     </article>
     <article class="price-card featured">
-      <div class="saving">Save €24 a year</div>
-      <h3>Yearly</h3>
-      <p class="price"><strong>€60</strong><span>/ year</span></p>
+      <div class="saving" data-i18n="pricing.save">Save €24 a year</div>
+      <h3 data-i18n="pricing.yearly">Yearly</h3>
+      <p class="price"><strong>€60</strong><span data-i18n="pricing.perYear">/ year</span></p>
       <ul class="plan-features">
-        <li>All 26 PDF tools</li>
-        <li>Larger files and higher usage limits</li>
-        <li>Faster processing queue</li>
-        <li>Best price — equal to €5 per month</li>
+        <li data-i18n="pricing.allTools">All 26 PDF tools</li>
+        <li data-i18n="pricing.higherLimits">Larger files and higher usage limits</li>
+        <li data-i18n="pricing.fastQueue">Faster processing queue</li>
+        <li data-i18n="pricing.bestPrice">Best price — equal to €5 per month</li>
       </ul>
-      <button class="primary full" type="button" data-plan="yearly">Choose yearly</button>
+      <button class="primary full" type="button" data-plan="yearly" data-i18n="pricing.chooseYearly">Choose yearly</button>
     </article>
   </div>
 </section>
 
 <div id="authModal" class="modal hidden" aria-hidden="true">
   <div class="dialog auth-dialog" role="dialog" aria-modal="true" aria-labelledby="authTitle">
-    <button class="close" id="authClose" type="button" aria-label="Close">×</button>
+    <button class="close" id="authClose" type="button" aria-label="Close" data-i18n-aria-label="common.close">×</button>
     <div id="authSignedOut">
       <div class="auth-tabs" role="tablist">
-        <button class="auth-tab active" type="button" data-auth-mode="login">Sign in</button>
-        <button class="auth-tab" type="button" data-auth-mode="register">Create account</button>
+        <button class="auth-tab active" type="button" data-auth-mode="login" data-i18n="auth.signIn">Sign in</button>
+        <button class="auth-tab" type="button" data-auth-mode="register" data-i18n="auth.createAccount">Create account</button>
       </div>
       <h2 id="authTitle">Welcome back</h2>
       <p id="authSubtitle">Sign in to manage your PaperMint account.</p>
       <form id="authForm">
         <div class="field">
-          <label for="authEmail">Email</label>
+          <label for="authEmail" data-i18n="auth.email">Email</label>
           <input id="authEmail" name="email" type="email" autocomplete="email" required>
         </div>
         <div class="field">
-          <label for="authPassword">Password</label>
+          <label for="authPassword" data-i18n="auth.password">Password</label>
           <input id="authPassword" name="password" type="password" autocomplete="current-password" minlength="8" maxlength="128" required>
         </div>
         <button class="primary full" id="authSubmit" type="submit">Sign in</button>
@@ -116,15 +134,19 @@
     </div>
     <div id="authSignedIn" class="hidden account-panel">
       <div class="account-check">✓</div>
-      <h2>Your account</h2>
-      <p>You are signed in as <strong id="accountEmail"></strong>.</p>
-      <button class="price-button" id="logoutButton" type="button">Sign out</button>
+      <h2 data-i18n="auth.yourAccount">Your account</h2>
+      <p><span data-i18n="auth.signedAs">You are signed in as</span> <strong id="accountEmail"></strong>.</p>
+      <button class="price-button" id="logoutButton" type="button" data-i18n="auth.signOut">Sign out</button>
     </div>
   </div>
 </div>
 
-<section id="privacy" class="privacy"><h2>Built around privacy</h2><p>Uploaded originals are deleted after processing. Downloadable results are deleted after download or automatically within 30 minutes.</p></section>
-<footer><span>© 2026 PaperMint</span><span>PDF tools made simple.</span></footer>
+<section id="privacy" class="privacy"><h2 data-i18n="privacy.title">Built around privacy</h2><p data-i18n="privacy.description">Uploaded originals are deleted after processing. Downloadable results are deleted after download or automatically within 30 minutes.</p></section>
+<footer>
+  <span>© 2026 PaperMint</span>
+  <span class="footer-links"><a href="/terms" data-i18n="footer.terms">Terms &amp; Conditions</a><a href="#privacy" data-i18n="nav.privacy">Privacy</a></span>
+</footer>
+<script src="/static/i18n.js"></script>
 <script src="/static/app.js"></script>
 <script src="/static/account-pricing.js"></script>
 </body>
