@@ -75,6 +75,27 @@ class AuthStoreTests(unittest.TestCase):
         refunded = self.store.refund_ai_usage(user.id, documents=1)
         self.assertEqual(refunded.documents, 0)
 
+    def test_stripe_customer_mapping(self):
+        user = self.store.register("billing@example.com", "strong-password")
+        self.store.set_billing_customer(
+            user.id,
+            customer_id="cus_test_123",
+            subscription_id="sub_test_123",
+        )
+
+        billing = self.store.billing_for_user(user.id)
+        self.assertIsNotNone(billing)
+        self.assertEqual(billing.stripe_customer_id, "cus_test_123")
+        self.assertEqual(billing.stripe_subscription_id, "sub_test_123")
+        self.assertEqual(
+            self.store.user_id_for_billing(customer_id="cus_test_123"),
+            user.id,
+        )
+        self.assertEqual(
+            self.store.user_id_for_billing(subscription_id="sub_test_123"),
+            user.id,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

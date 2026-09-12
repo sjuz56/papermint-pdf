@@ -16,3 +16,4 @@ pdf2docx
 redis>=5,<7
 rq>=2,<3
 psycopg[binary]>=3.2,<4
+stripe>=12,<14

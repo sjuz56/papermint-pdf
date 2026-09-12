@@ -191,6 +191,36 @@ html {
   box-shadow: 0 2px 9px rgba(18, 51, 107, .1);
 }
 
+.password-control {
+  position: relative;
+}
+
+.password-control input {
+  width: 100%;
+  padding-right: 88px;
+}
+
+.password-toggle {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  padding: 7px 9px;
+  border: 0;
+  border-radius: 9px;
+  background: var(--blue-pale);
+  color: var(--navy);
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+  transform: translateY(-50%);
+}
+
+.password-toggle:hover,
+.password-toggle:focus-visible {
+  background: #d9f0ff;
+  outline: 2px solid rgba(53, 168, 239, .25);
+}
+
 .form-status {
   min-height: 20px;
   margin-top: 12px;
@@ -223,6 +253,94 @@ html {
   color: var(--orange);
   font-size: 24px;
   font-weight: 900;
+}
+
+.account-plan-badge {
+  display: inline-flex;
+  margin: 0 auto 18px;
+  padding: 6px 11px;
+  border-radius: 999px;
+  background: var(--blue-pale);
+  color: var(--navy);
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: .06em;
+}
+
+.account-plan-badge.pro {
+  background: var(--orange-pale);
+  color: var(--orange-dark);
+}
+
+#manageSubscriptionButton {
+  margin-bottom: 10px;
+}
+
+.checkout-dialog {
+  max-width: 500px;
+}
+
+.checkout-mark {
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  margin-bottom: 14px;
+  border-radius: 50%;
+  background: var(--orange-pale);
+  color: var(--orange-dark);
+  font-size: 25px;
+  font-weight: 900;
+}
+
+.checkout-plan {
+  margin-bottom: 19px;
+  color: var(--muted);
+}
+
+.checkout-consent {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  margin: 18px 0;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.checkout-consent input {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  margin-top: 1px;
+}
+
+.checkout-consent a {
+  color: var(--blue-dark);
+  font-weight: 750;
+}
+
+#checkoutContinue:disabled {
+  opacity: .5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.billing-notice {
+  position: fixed;
+  z-index: 80;
+  right: 18px;
+  bottom: 18px;
+  max-width: min(420px, calc(100vw - 36px));
+  padding: 14px 18px;
+  border-radius: 14px;
+  background: var(--navy);
+  color: white;
+  box-shadow: 0 16px 36px rgba(18, 51, 107, .24);
+  font-size: 14px;
 }
 
 #authSignedIn.hidden {

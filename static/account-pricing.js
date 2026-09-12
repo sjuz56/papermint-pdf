@@ -7,6 +7,23 @@ const authModal = document.getElementById('authModal');
 const signInButton = document.getElementById('signInButton');
 const authForm = document.getElementById('authForm');
 const authStatus = document.getElementById('authStatus');
+const authPassword = document.getElementById('authPassword');
+const authPasswordToggle = document.getElementById('authPasswordToggle');
+const checkoutModal = document.getElementById('checkoutModal');
+const checkoutConsent = document.getElementById('checkoutConsent');
+const checkoutContinue = document.getElementById('checkoutContinue');
+const checkoutStatus = document.getElementById('checkoutStatus');
+
+function setPasswordVisibility(visible) {
+  if (!authPassword || !authPasswordToggle) return;
+  authPassword.type = visible ? 'text' : 'password';
+  authPasswordToggle.setAttribute('aria-pressed', String(visible));
+  authPasswordToggle.textContent = accountT(visible ? 'auth.hidePassword' : 'auth.showPassword');
+  authPasswordToggle.setAttribute(
+    'aria-label',
+    accountT(visible ? 'auth.hidePassword' : 'auth.showPassword')
+  );
+}
 
 function setAuthMode(mode) {
   authMode = mode === 'register' ? 'register' : 'login';
@@ -28,6 +45,7 @@ function setAuthMode(mode) {
   document.getElementById('authPassword').autocomplete = registering
     ? 'new-password'
     : 'current-password';
+  setPasswordVisibility(false);
   authStatus.textContent = '';
   authStatus.classList.remove('error');
 }
@@ -41,6 +59,14 @@ function renderAccount() {
     signedIn.classList.remove('hidden');
     document.getElementById('accountEmail').textContent = currentAccount.email;
     signInButton.textContent = accountT('auth.account');
+    const pro = currentAccount.plan === 'pro';
+    const planBadge = document.getElementById('accountPlanBadge');
+    planBadge.textContent = pro ? 'PRO' : 'FREE';
+    planBadge.classList.toggle('pro', pro);
+    document.getElementById('manageSubscriptionButton')?.classList.toggle(
+      'hidden',
+      !currentAccount.billing_managed
+    );
   } else {
     signedOut.classList.remove('hidden');
     signedIn.classList.add('hidden');
@@ -68,6 +94,48 @@ function closeAuth() {
   authModal.setAttribute('aria-hidden', 'true');
 }
 
+function showBillingNotice(message) {
+  const notice = document.createElement('div');
+  notice.className = 'billing-notice';
+  notice.setAttribute('role', 'status');
+  notice.textContent = message;
+  document.body.appendChild(notice);
+  window.setTimeout(() => notice.remove(), 7000);
+}
+
+function updateCheckoutPlanText() {
+  const planText = document.getElementById('checkoutPlanText');
+  if (!planText || !selectedPlan) return;
+  planText.textContent = selectedPlan === 'yearly'
+    ? accountT('billing.yearlySummary')
+    : accountT('billing.monthlySummary');
+}
+
+function openCheckoutConsent(plan) {
+  selectedPlan = plan === 'yearly' ? 'yearly' : 'monthly';
+  checkoutConsent.checked = false;
+  checkoutContinue.disabled = true;
+  checkoutStatus.textContent = '';
+  checkoutStatus.classList.remove('error');
+  updateCheckoutPlanText();
+  checkoutModal.classList.remove('hidden');
+  checkoutModal.setAttribute('aria-hidden', 'false');
+}
+
+function closeCheckout() {
+  checkoutModal.classList.add('hidden');
+  checkoutModal.setAttribute('aria-hidden', 'true');
+  selectedPlan = null;
+}
+
+function safeStripeRedirect(rawUrl, expectedHost) {
+  const target = new URL(rawUrl);
+  if (target.protocol !== 'https:' || target.hostname !== expectedHost) {
+    throw new Error(accountT('billing.failed'));
+  }
+  window.location.assign(target.href);
+}
+
 async function readJson(response) {
   try {
     return await response.json();
@@ -90,6 +158,10 @@ async function loadAccount() {
 
 signInButton?.addEventListener('click', openAuth);
 document.getElementById('authClose')?.addEventListener('click', closeAuth);
+authPasswordToggle?.addEventListener('click', () => {
+  setPasswordVisibility(authPassword?.type === 'password');
+  authPassword?.focus();
+});
 
 document.querySelectorAll('[data-auth-mode]').forEach(button => {
   button.addEventListener('click', () => setAuthMode(button.dataset.authMode));
@@ -124,12 +196,13 @@ authForm?.addEventListener('submit', async event => {
 
     currentAccount = data;
     authForm.reset();
+    setPasswordVisibility(false);
     renderAccount();
 
     if (selectedPlan) {
-      selectedPlan = null;
+      const plan = selectedPlan;
       closeAuth();
-      document.getElementById('pricing')?.scrollIntoView({behavior: 'smooth'});
+      openCheckoutConsent(plan);
     }
   } catch (error) {
     authStatus.textContent = error.message;
@@ -144,6 +217,17 @@ document.getElementById('logoutButton')?.addEventListener('click', async () => {
     currentAccount = {authenticated: false};
     closeAuth();
     renderAccount();
+  }
+});
+
+document.getElementById('manageSubscriptionButton')?.addEventListener('click', async () => {
+  try {
+    const response = await fetch('/api/billing/portal', {method: 'POST'});
+    const data = await readJson(response);
+    if (!response.ok) throw new Error(data.detail || accountT('billing.portalFailed'));
+    safeStripeRedirect(data.url, 'billing.stripe.com');
+  } catch (error) {
+    showBillingNotice(error.message);
   }
 });
 
@@ -162,9 +246,38 @@ document.querySelectorAll('[data-plan]').forEach(button => {
       openAuth();
       return;
     }
-
-    document.getElementById('pricing')?.scrollIntoView({behavior: 'smooth'});
+    openCheckoutConsent(selectedPlan);
   });
+});
+
+checkoutConsent?.addEventListener('change', () => {
+  checkoutContinue.disabled = !checkoutConsent.checked;
+});
+
+document.getElementById('checkoutClose')?.addEventListener('click', closeCheckout);
+checkoutModal?.addEventListener('click', event => {
+  if (event.target === checkoutModal) closeCheckout();
+});
+
+checkoutContinue?.addEventListener('click', async () => {
+  if (!checkoutConsent.checked || !selectedPlan) return;
+  checkoutContinue.disabled = true;
+  checkoutStatus.classList.remove('error');
+  checkoutStatus.textContent = accountT('billing.opening');
+  try {
+    const response = await fetch('/api/billing/checkout', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({plan: selectedPlan, accepted_terms: checkoutConsent.checked})
+    });
+    const data = await readJson(response);
+    if (!response.ok) throw new Error(data.detail || accountT('billing.failed'));
+    safeStripeRedirect(data.url, 'checkout.stripe.com');
+  } catch (error) {
+    checkoutStatus.textContent = error.message;
+    checkoutStatus.classList.add('error');
+    checkoutContinue.disabled = !checkoutConsent.checked;
+  }
 });
 
 authModal?.addEventListener('click', event => {
@@ -175,6 +288,9 @@ document.addEventListener('keydown', event => {
   if (event.key === 'Escape' && !authModal?.classList.contains('hidden')) {
     closeAuth();
   }
+  if (event.key === 'Escape' && !checkoutModal?.classList.contains('hidden')) {
+    closeCheckout();
+  }
 });
 
 setAuthMode('login');
@@ -182,4 +298,16 @@ loadAccount();
 
 window.addEventListener('papermint:languagechange', () => {
   renderAccount();
+  setPasswordVisibility(authPassword?.type === 'text');
+  updateCheckoutPlanText();
 });
+
+setPasswordVisibility(false);
+
+const checkoutResult = new URLSearchParams(window.location.search).get('checkout');
+if (checkoutResult === 'success') {
+  showBillingNotice(accountT('billing.success'));
+  window.setTimeout(loadAccount, 1800);
+} else if (checkoutResult === 'cancelled') {
+  showBillingNotice(accountT('billing.cancelled'));
+}

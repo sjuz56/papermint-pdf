@@ -44,6 +44,13 @@ class AiUsage:
     questions: int
 
 
+@dataclass(frozen=True)
+class BillingRecord:
+    user_id: str
+    stripe_customer_id: str | None
+    stripe_subscription_id: str | None
+
+
 def normalize_email(value: str) -> str:
     email = (value or "").strip().lower()
     if len(email) > 254 or not EMAIL_RE.fullmatch(email):
@@ -181,6 +188,17 @@ class AuthStore:
                     documents INTEGER NOT NULL DEFAULT 0,
                     questions INTEGER NOT NULL DEFAULT 0,
                     PRIMARY KEY(user_id, period),
+                    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+                )
+                """
+            )
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS billing_customers (
+                    user_id TEXT PRIMARY KEY,
+                    stripe_customer_id TEXT UNIQUE,
+                    stripe_subscription_id TEXT UNIQUE,
+                    updated_at BIGINT NOT NULL,
                     FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
                 )
                 """
@@ -341,6 +359,81 @@ class AuthStore:
                     """,
                     (user_id, plan, current_period_end, now),
                 )
+
+    def set_billing_customer(
+        self,
+        user_id: str,
+        *,
+        customer_id: str | None,
+        subscription_id: str | None,
+    ) -> None:
+        now = int(time.time())
+        with self._connect() as connection:
+            cursor = connection.cursor()
+            if self.postgres:
+                cursor.execute(
+                    """
+                    INSERT INTO billing_customers
+                        (user_id, stripe_customer_id, stripe_subscription_id, updated_at)
+                    VALUES (%s, %s, %s, %s)
+                    ON CONFLICT (user_id) DO UPDATE SET
+                        stripe_customer_id = COALESCE(EXCLUDED.stripe_customer_id, billing_customers.stripe_customer_id),
+                        stripe_subscription_id = COALESCE(EXCLUDED.stripe_subscription_id, billing_customers.stripe_subscription_id),
+                        updated_at = EXCLUDED.updated_at
+                    """,
+                    (user_id, customer_id, subscription_id, now),
+                )
+            else:
+                cursor.execute(
+                    """
+                    INSERT INTO billing_customers
+                        (user_id, stripe_customer_id, stripe_subscription_id, updated_at)
+                    VALUES (?, ?, ?, ?)
+                    ON CONFLICT(user_id) DO UPDATE SET
+                        stripe_customer_id = COALESCE(excluded.stripe_customer_id, billing_customers.stripe_customer_id),
+                        stripe_subscription_id = COALESCE(excluded.stripe_subscription_id, billing_customers.stripe_subscription_id),
+                        updated_at = excluded.updated_at
+                    """,
+                    (user_id, customer_id, subscription_id, now),
+                )
+
+    def billing_for_user(self, user_id: str) -> BillingRecord | None:
+        placeholder = self._placeholder
+        with self._connect() as connection:
+            cursor = connection.cursor()
+            cursor.execute(
+                f"SELECT user_id, stripe_customer_id, stripe_subscription_id "
+                f"FROM billing_customers WHERE user_id = {placeholder}",
+                (user_id,),
+            )
+            row = cursor.fetchone()
+        return BillingRecord(row[0], row[1], row[2]) if row else None
+
+    def user_id_for_billing(
+        self,
+        *,
+        customer_id: str | None = None,
+        subscription_id: str | None = None,
+    ) -> str | None:
+        if not customer_id and not subscription_id:
+            return None
+        placeholder = self._placeholder
+        clauses: list[str] = []
+        values: list[str] = []
+        if customer_id:
+            clauses.append(f"stripe_customer_id = {placeholder}")
+            values.append(customer_id)
+        if subscription_id:
+            clauses.append(f"stripe_subscription_id = {placeholder}")
+            values.append(subscription_id)
+        with self._connect() as connection:
+            cursor = connection.cursor()
+            cursor.execute(
+                "SELECT user_id FROM billing_customers WHERE " + " OR ".join(clauses),
+                tuple(values),
+            )
+            row = cursor.fetchone()
+        return row[0] if row else None
 
     def ai_usage(self, user_id: str, timestamp: int | None = None) -> AiUsage:
         period = self._usage_period(timestamp)

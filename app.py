@@ -12,6 +12,8 @@ import threading
 import time
 import uuid
 
+import stripe
+
 from papermint_v28_engine import (
     V28JobManager,
     V28Policy,
@@ -57,6 +59,14 @@ AUTH_STORE = AuthStore(
     database_url=os.getenv("DATABASE_URL"),
     sqlite_path=BASE / "data" / "papermint.sqlite3",
 )
+
+STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY", "").strip()
+STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "").strip()
+STRIPE_PRICE_IDS = {
+    "monthly": os.getenv("STRIPE_MONTHLY_PRICE_ID", "").strip(),
+    "yearly": os.getenv("STRIPE_YEARLY_PRICE_ID", "").strip(),
+}
+stripe.api_key = STRIPE_SECRET_KEY or None
 
 AI_DOCUMENT_LIMIT = max(1, int(os.getenv("PAPERMINT_AI_DOCUMENT_LIMIT", "30")))
 AI_QUESTION_LIMIT = max(1, int(os.getenv("PAPERMINT_AI_QUESTION_LIMIT", "90")))
@@ -193,12 +203,19 @@ class AuthCredentials(BaseModel):
     password: str
 
 
+class CheckoutPlan(BaseModel):
+    plan: str
+    accepted_terms: bool = False
+
+
 def _auth_response(user, token: str, request: Request) -> JSONResponse:
+    billing = AUTH_STORE.billing_for_user(user.id)
     response = JSONResponse(
         {
             "authenticated": True,
             "email": user.email,
             "plan": AUTH_STORE.plan_for_user(user),
+            "billing_managed": bool(billing and billing.stripe_customer_id),
         }
     )
     forwarded_proto = request.headers.get("x-forwarded-proto", "")
@@ -240,10 +257,12 @@ def current_account(request: Request):
     user = AUTH_STORE.user_for_session(request.cookies.get(AUTH_COOKIE))
     if not user:
         return {"authenticated": False}
+    billing = AUTH_STORE.billing_for_user(user.id)
     return {
         "authenticated": True,
         "email": user.email,
         "plan": AUTH_STORE.plan_for_user(user),
+        "billing_managed": bool(billing and billing.stripe_customer_id),
     }
 
 
@@ -253,6 +272,206 @@ def logout_account(request: Request):
     response = JSONResponse({"authenticated": False})
     response.delete_cookie(AUTH_COOKIE, path="/", samesite="lax")
     return response
+
+
+def _signed_in_user(request: Request):
+    user = AUTH_STORE.user_for_session(request.cookies.get(AUTH_COOKIE))
+    if not user:
+        raise HTTPException(401, "Sign in to continue.")
+    return user
+
+
+def _public_url(request: Request) -> str:
+    configured = os.getenv("PAPERMINT_PUBLIC_URL", "").strip().rstrip("/")
+    if configured:
+        if not configured.startswith(("https://", "http://")):
+            raise HTTPException(500, "The public site URL is not configured correctly.")
+        return configured
+    return str(request.base_url).rstrip("/")
+
+
+def _stripe_configured(plan: str | None = None) -> bool:
+    if not STRIPE_SECRET_KEY:
+        return False
+    return bool(STRIPE_PRICE_IDS.get(plan, "")) if plan else all(STRIPE_PRICE_IDS.values())
+
+
+def _stripe_value(value, key: str, default=None):
+    if value is None:
+        return default
+    if isinstance(value, dict):
+        return value.get(key, default)
+    return getattr(value, key, default)
+
+
+def _stripe_metadata(value) -> dict:
+    metadata = _stripe_value(value, "metadata", {}) or {}
+    return dict(metadata)
+
+
+def _subscription_plan(subscription) -> str:
+    """Resolve the plan from Stripe's Price ID, with metadata as fallback."""
+    items = _stripe_value(_stripe_value(subscription, "items", {}), "data", []) or []
+    if items:
+        price_id = str(_stripe_value(_stripe_value(items[0], "price", {}), "id", "") or "")
+        for plan, configured_price_id in STRIPE_PRICE_IDS.items():
+            if configured_price_id and price_id == configured_price_id:
+                return plan
+    metadata_plan = str(_stripe_metadata(subscription).get("plan", "") or "")
+    return metadata_plan if metadata_plan in {"monthly", "yearly"} else "free"
+
+
+def _sync_stripe_subscription(subscription) -> None:
+    subscription_id = str(_stripe_value(subscription, "id", "") or "")
+    customer_id = str(_stripe_value(subscription, "customer", "") or "")
+    metadata = _stripe_metadata(subscription)
+    user_id = metadata.get("user_id") or AUTH_STORE.user_id_for_billing(
+        customer_id=customer_id or None,
+        subscription_id=subscription_id or None,
+    )
+    if not user_id:
+        return
+
+    status = str(_stripe_value(subscription, "status", "") or "")
+    requested_plan = _subscription_plan(subscription)
+    plan = requested_plan if status in {"active", "trialing"} else "free"
+    period_end = _stripe_value(subscription, "current_period_end")
+    AUTH_STORE.set_billing_customer(
+        user_id,
+        customer_id=customer_id or None,
+        subscription_id=subscription_id or None,
+    )
+    AUTH_STORE.set_subscription(
+        user_id,
+        plan,
+        int(period_end) if period_end is not None else None,
+    )
+
+
+@app.get("/api/billing/status")
+def billing_status(request: Request):
+    user = AUTH_STORE.user_for_session(request.cookies.get(AUTH_COOKIE))
+    return {
+        "configured": _stripe_configured(),
+        "authenticated": bool(user),
+        "plan": AUTH_STORE.plan_for_user(user) if user else "free",
+        "portal_available": bool(user and AUTH_STORE.billing_for_user(user.id)),
+    }
+
+
+@app.post("/api/billing/checkout")
+async def create_checkout(payload: CheckoutPlan, request: Request):
+    user = _signed_in_user(request)
+    plan = (payload.plan or "").strip().lower()
+    if plan not in STRIPE_PRICE_IDS:
+        raise HTTPException(400, "Choose a monthly or yearly plan.")
+    if not payload.accepted_terms:
+        raise HTTPException(400, "Accept the Terms & Conditions to continue.")
+    if not _stripe_configured(plan):
+        raise HTTPException(503, "Payments are not activated yet.")
+
+    public_url = _public_url(request)
+    billing = AUTH_STORE.billing_for_user(user.id)
+    if AUTH_STORE.plan_for_user(user) == "pro" and billing and billing.stripe_customer_id:
+        raise HTTPException(409, "This account already has a paid subscription. Manage it from your account.")
+    accepted_at = str(int(time.time()))
+    checkout_metadata = {
+        "user_id": user.id,
+        "plan": plan,
+        "terms_version": "2026-09-12",
+        "terms_accepted_at": accepted_at,
+    }
+    parameters = {
+        "mode": "subscription",
+        "line_items": [{"price": STRIPE_PRICE_IDS[plan], "quantity": 1}],
+        "client_reference_id": user.id,
+        "metadata": checkout_metadata,
+        "subscription_data": {"metadata": checkout_metadata},
+        "success_url": f"{public_url}/?checkout=success#pricing",
+        "cancel_url": f"{public_url}/?checkout=cancelled#pricing",
+        "allow_promotion_codes": True,
+    }
+    if billing and billing.stripe_customer_id:
+        parameters["customer"] = billing.stripe_customer_id
+    else:
+        parameters["customer_email"] = user.email
+
+    try:
+        checkout = await run_in_threadpool(stripe.checkout.Session.create, **parameters)
+    except stripe.StripeError as exc:
+        raise HTTPException(502, "The secure payment page could not be opened.") from exc
+    checkout_url = _stripe_value(checkout, "url")
+    if not checkout_url:
+        raise HTTPException(502, "The secure payment page did not return a link.")
+    return {"url": checkout_url}
+
+
+@app.post("/api/billing/portal")
+async def create_billing_portal(request: Request):
+    user = _signed_in_user(request)
+    if not STRIPE_SECRET_KEY:
+        raise HTTPException(503, "Subscription management is not activated yet.")
+    billing = AUTH_STORE.billing_for_user(user.id)
+    if not billing or not billing.stripe_customer_id:
+        raise HTTPException(404, "No paid subscription was found for this account.")
+    try:
+        portal = await run_in_threadpool(
+            stripe.billing_portal.Session.create,
+            customer=billing.stripe_customer_id,
+            return_url=_public_url(request),
+        )
+    except stripe.StripeError as exc:
+        raise HTTPException(502, "Subscription management could not be opened.") from exc
+    return {"url": _stripe_value(portal, "url")}
+
+
+@app.post("/api/billing/webhook")
+async def stripe_webhook(request: Request):
+    if not STRIPE_WEBHOOK_SECRET:
+        raise HTTPException(503, "Stripe webhook is not configured.")
+    signature = request.headers.get("stripe-signature")
+    if not signature:
+        raise HTTPException(400, "Missing Stripe signature.")
+    try:
+        event = stripe.Webhook.construct_event(
+            await request.body(),
+            signature,
+            STRIPE_WEBHOOK_SECRET,
+        )
+    except (ValueError, stripe.SignatureVerificationError) as exc:
+        raise HTTPException(400, "Invalid Stripe webhook.") from exc
+
+    event_type = _stripe_value(event, "type", "")
+    event_data = _stripe_value(_stripe_value(event, "data", {}), "object", {})
+    if event_type == "checkout.session.completed":
+        metadata = _stripe_metadata(event_data)
+        user_id = metadata.get("user_id") or _stripe_value(event_data, "client_reference_id")
+        customer_id = _stripe_value(event_data, "customer")
+        subscription_id = _stripe_value(event_data, "subscription")
+        if user_id:
+            AUTH_STORE.set_billing_customer(
+                str(user_id),
+                customer_id=str(customer_id) if customer_id else None,
+                subscription_id=str(subscription_id) if subscription_id else None,
+            )
+        if subscription_id:
+            try:
+                subscription = await run_in_threadpool(
+                    stripe.Subscription.retrieve,
+                    str(subscription_id),
+                )
+                _sync_stripe_subscription(subscription)
+            except stripe.StripeError:
+                # Stripe retries webhook deliveries; do not grant access without
+                # confirmed subscription state.
+                raise HTTPException(502, "Subscription state could not be confirmed.")
+    elif event_type in {
+        "customer.subscription.created",
+        "customer.subscription.updated",
+        "customer.subscription.deleted",
+    }:
+        _sync_stripe_subscription(event_data)
+    return {"received": True}
 
 
 class AskOctoQuestion(BaseModel):

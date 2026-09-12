@@ -29,6 +29,39 @@ Set `DATABASE_URL` to a Render PostgreSQL connection string before enabling publ
 accounts. Local development uses `data/papermint.sqlite3`; Render's default disk is
 ephemeral, so SQLite must not be used for production accounts.
 
+## Stripe subscriptions
+
+The monthly and yearly Pro buttons use Stripe-hosted Checkout. After a signed-in
+customer accepts the terms on PaperMint, Stripe handles the payment details. Signed
+webhooks activate or revoke Pro access, and the account dialog links existing paying
+customers to Stripe's Customer Portal for invoices, card changes, and cancellation.
+
+Create one Stripe product with recurring EUR prices of €7/month and €60/year, then
+set these Render environment variables:
+
+```text
+PAPERMINT_PUBLIC_URL=https://your-final-domain.example
+STRIPE_SECRET_KEY=sk_live_...
+STRIPE_WEBHOOK_SECRET=whsec_...
+STRIPE_MONTHLY_PRICE_ID=price_...
+STRIPE_YEARLY_PRICE_ID=price_...
+```
+
+In Stripe, configure the Customer Portal and add the webhook endpoint
+`https://your-final-domain.example/api/billing/webhook` for:
+
+```text
+checkout.session.completed
+customer.subscription.created
+customer.subscription.updated
+customer.subscription.deleted
+```
+
+Use Stripe sandbox keys and prices for testing before switching all four Stripe
+values to live mode. Never commit Stripe secrets to Git. A persistent `DATABASE_URL`
+is required before accepting real payments; otherwise Render can lose the connection
+between an account and its Stripe subscription during a redeploy.
+
 
 ## Background processing and overload protection
 
@@ -66,9 +99,9 @@ OPENAI_API_KEY=...
 PAPERMINT_AI_MODEL=gpt-5.6-luna
 ```
 
-Until Stripe webhooks activate subscriptions in the `subscriptions` table, test Pro
-access by setting `PAPERMINT_PRO_EMAILS` to a comma-separated list of account email
-addresses. Never put `OPENAI_API_KEY` in frontend code or commit it to Git.
+For owner/beta access without a Stripe payment, set `PAPERMINT_PRO_EMAILS` to a
+comma-separated list of account email addresses. Never put `OPENAI_API_KEY` in
+frontend code or commit it to Git.
 
 The uploaded PDF is deleted immediately after extraction. Extracted text is kept in
 process memory for the question session and removed after 30 minutes; OpenAI requests
@@ -80,7 +113,9 @@ Merge, split/ranges, compress, editable PDF→Word, PDF→PowerPoint, PDF→Exce
 
 ## Important production notes
 
-This is a functional MVP, not yet a hardened public SaaS. Before public launch add email verification and password reset, rate limiting, malware scanning, page limits, encrypted storage, logging/monitoring, legal/privacy pages, billing, and sandboxed document conversion workers.
+This is a functional MVP, not yet a hardened public SaaS. Before public launch add
+email verification and password reset, rate limiting, malware scanning, page limits,
+encrypted storage, logging/monitoring, and sandboxed document conversion workers.
 
 PDF→Word creates an editable DOCX and preserves the original layout as closely as the source permits.
 

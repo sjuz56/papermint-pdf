@@ -128,7 +128,10 @@
         </div>
         <div class="field">
           <label for="authPassword" data-i18n="auth.password">Password</label>
-          <input id="authPassword" name="password" type="password" autocomplete="current-password" minlength="8" maxlength="128" required>
+          <div class="password-control">
+            <input id="authPassword" name="password" type="password" autocomplete="current-password" minlength="8" maxlength="128" required>
+            <button id="authPasswordToggle" class="password-toggle" type="button" aria-controls="authPassword" aria-pressed="false">Show</button>
+          </div>
         </div>
         <button class="primary full" id="authSubmit" type="submit">Sign in</button>
         <div id="authStatus" class="form-status" aria-live="polite"></div>
@@ -138,8 +141,25 @@
       <div class="account-check">✓</div>
       <h2 data-i18n="auth.yourAccount">Your account</h2>
       <p><span data-i18n="auth.signedAs">You are signed in as</span> <strong id="accountEmail"></strong>.</p>
+      <div id="accountPlanBadge" class="account-plan-badge">FREE</div>
+      <button class="primary full hidden" id="manageSubscriptionButton" type="button" data-i18n="billing.manage">Manage subscription</button>
       <button class="price-button" id="logoutButton" type="button" data-i18n="auth.signOut">Sign out</button>
     </div>
+  </div>
+</div>
+
+<div id="checkoutModal" class="modal hidden" aria-hidden="true">
+  <div class="dialog checkout-dialog" role="dialog" aria-modal="true" aria-labelledby="checkoutTitle">
+    <button class="close" id="checkoutClose" type="button" aria-label="Close" data-i18n-aria-label="common.close">×</button>
+    <div class="checkout-mark">€</div>
+    <h2 id="checkoutTitle" data-i18n="billing.title">Complete your subscription</h2>
+    <p id="checkoutPlanText" class="checkout-plan"></p>
+    <label class="checkout-consent">
+      <input id="checkoutConsent" type="checkbox">
+      <span><span data-i18n="billing.consent">I agree to the Terms &amp; Conditions and request immediate access after payment.</span> <a href="/terms" target="_blank" rel="noopener" data-i18n="footer.terms">Terms &amp; Conditions</a></span>
+    </label>
+    <button class="primary full" id="checkoutContinue" type="button" disabled data-i18n="billing.continue">Continue to secure payment</button>
+    <div id="checkoutStatus" class="form-status" aria-live="polite"></div>
   </div>
 </div>
 
