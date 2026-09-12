@@ -11,7 +11,10 @@ def test_terms_page_is_available_and_contains_withdrawal_notice():
 
     assert response.status_code == 200
     assert "Obchodní podmínky" in response.text
-    assert "prvním skutečným využitím placené funkce" in response.text
+    assert "§ 2389t" in response.text
+    assert "§ 1837 písm. l)" in response.text
+    assert "Skutečným využitím placené funkce" in response.text
+    assert "Pouhé prohlížení webu" in response.text
     assert "práva z vadného plnění" in response.text
 
 

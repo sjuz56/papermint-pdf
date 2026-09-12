@@ -65,6 +65,8 @@ class FrontendLocalizationTests(unittest.TestCase):
     def test_paid_plans_use_stripe_checkout_with_terms_consent(self):
         account_js = (ROOT / "static" / "account-pricing.js").read_text(encoding="utf-8")
         self.assertIn('id="checkoutConsent"', self.index)
+        self.assertIn("right to withdraw expires", self.index)
+        self.assertIn("prvním využitím placené funkce zaniká mé právo", self.i18n)
         self.assertIn('/api/billing/checkout', account_js)
         self.assertIn('/api/billing/portal', account_js)
         for label in (
