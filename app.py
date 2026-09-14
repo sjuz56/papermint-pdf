@@ -145,7 +145,7 @@ RESULT_FILE_PREFIXES = (
 PDF_WORD_OUTPUTS = TMP / "pdf-word-results"
 PDF_WORD_OUTPUTS.mkdir(exist_ok=True)
 
-app = FastAPI(title="PaperMint PDF Toolbox")
+app = FastAPI(title="PDFaspect PDF Toolbox")
 
 app.mount(
     "/static",

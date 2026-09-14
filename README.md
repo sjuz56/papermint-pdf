@@ -1,4 +1,4 @@
-# PaperMint PDF Toolbox
+# PDFaspect PDF Toolbox
 
 Functional local prototype of a multi-tool PDF web app.
 
@@ -32,7 +32,7 @@ ephemeral, so SQLite must not be used for production accounts.
 ## Stripe subscriptions
 
 The monthly and yearly Pro buttons use Stripe-hosted Checkout. After a signed-in
-customer accepts the terms on PaperMint, Stripe handles the payment details. Signed
+customer accepts the terms on PDFaspect, Stripe handles the payment details. Signed
 webhooks activate or revoke Pro access, and the account dialog links existing paying
 customers to Stripe's Customer Portal for invoices, card changes, and cancellation.
 

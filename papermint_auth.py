@@ -1,4 +1,4 @@
-"""Small password/session authentication store for the PaperMint web app.
+"""Small password/session authentication store for the PDFaspect web app.
 
 Production uses PostgreSQL through ``DATABASE_URL``. Local development falls
 back to SQLite so the account flow can be exercised without extra services.
