@@ -16,6 +16,8 @@ def test_terms_page_is_available_and_contains_withdrawal_notice():
     assert "Skutečným využitím placené funkce" in response.text
     assert "Pouhé prohlížení webu" in response.text
     assert "práva z vadného plnění" in response.text
+    assert 'href="mailto:pdfaspect@gmail.com"' in response.text
+    assert "[DOPLNIT KONTAKTNÍ E-MAIL]" not in response.text
 
 
 def test_home_page_links_to_terms():
