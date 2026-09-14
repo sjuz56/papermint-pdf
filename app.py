@@ -715,10 +715,9 @@ def save_upload(
 
 
 def _request_network_identifier(request: Request) -> str:
-    # Use the address appended by the nearest trusted hosting proxy. Taking the
-    # first value would allow a client-supplied X-Forwarded-For prefix to create
-    # unlimited anonymous quota identities.
-    forwarded = request.headers.get("x-forwarded-for", "").rsplit(",", 1)[-1].strip()
+    # Render supplies the original visitor first, followed by its proxy hops.
+    # The last address can change between requests and would reset Free usage.
+    forwarded = request.headers.get("x-forwarded-for", "").split(",", 1)[0].strip()
     if forwarded:
         return forwarded
     return request.client.host if request.client else "unknown"

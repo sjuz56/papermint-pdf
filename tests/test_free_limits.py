@@ -85,12 +85,12 @@ class FreeLimitTests(unittest.TestCase):
         self.assertTrue(key.startswith("anon:"))
         self.assertNotIn("203.0.113.10", key)
 
-    def test_client_cannot_choose_identity_with_forwarded_prefix(self):
+    def test_render_forwarded_chain_uses_original_visitor(self):
         request = Request({
             "type": "http",
             "method": "POST",
             "path": "/api/convert",
-            "headers": [(b"x-forwarded-for", b"spoofed, 203.0.113.10")],
+            "headers": [(b"x-forwarded-for", b"203.0.113.10, 10.0.0.2")],
             "client": ("127.0.0.1", 1234),
             "scheme": "http",
             "server": ("testserver", 80),
