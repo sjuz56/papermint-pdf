@@ -9,6 +9,7 @@ import unittest
 from unittest.mock import patch
 
 from fastapi import HTTPException, UploadFile
+from starlette.requests import Request
 
 import app as app_module
 
@@ -29,7 +30,18 @@ class RemainingToolsApiTests(unittest.TestCase):
 
     def _post(self, tool, filenames, **data):
         files = [UploadFile(filename=name, file=BytesIO(b"test-content")) for name in filenames]
+        request = Request({
+            "type": "http",
+            "method": "POST",
+            "path": "/api/convert",
+            "headers": [],
+            "client": ("127.0.0.1", 1234),
+            "scheme": "http",
+            "server": ("testserver", 80),
+            "query_string": b"",
+        })
         arguments = {
+            "request": request,
             "tool": tool,
             "files": files,
             "pages": "",
@@ -48,7 +60,18 @@ class RemainingToolsApiTests(unittest.TestCase):
             "ocr_language": "eng",
             **data,
         }
-        with patch.object(app_module, "enqueue_tool_job", side_effect=self._fake_enqueue) as enqueue:
+        with (
+            patch.object(
+                app_module,
+                "_conversion_access",
+                return_value=(
+                    None,
+                    app_module.MAX_UPLOAD_BYTES,
+                    app_module.MAX_REQUEST_BYTES,
+                ),
+            ),
+            patch.object(app_module, "enqueue_tool_job", side_effect=self._fake_enqueue) as enqueue,
+        ):
             response = asyncio.run(app_module.convert_tool(**arguments))
         self.assertEqual(response["status"], "queued")
         self.assertEqual(enqueue.call_args.args[0], tool)

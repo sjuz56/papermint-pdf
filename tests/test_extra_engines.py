@@ -8,11 +8,12 @@ from unittest.mock import patch
 from zipfile import ZipFile
 
 import fitz
-from openpyxl import load_workbook
+from openpyxl import Workbook, load_workbook
 from PIL import Image
 from docx import Document
 
 from papermint_extra_engines import (
+    _prepare_xlsx_for_pdf,
     compare_pdfs,
     crop_pdf,
     html_to_pdf,
@@ -109,6 +110,27 @@ class ExtraEngineTests(unittest.TestCase):
             self.assertEqual(len(workbook.sheetnames), 2)
         finally:
             workbook.close()
+
+    def test_excel_print_layout_expands_columns_and_fits_page(self):
+        source = self.temp_dir / "sheet.xlsx"
+        workbook = Workbook()
+        sheet = workbook.active
+        sheet["A1"] = "A much longer description that must not be clipped"
+        sheet["B1"] = "Price"
+        workbook.save(source)
+        workbook.close()
+
+        _prepare_xlsx_for_pdf(source)
+
+        prepared = load_workbook(source)
+        try:
+            sheet = prepared.active
+            self.assertGreater(sheet.column_dimensions["A"].width, 40)
+            self.assertEqual(sheet.page_setup.fitToWidth, 1)
+            self.assertEqual(sheet.page_setup.fitToHeight, 0)
+            self.assertEqual(sheet.page_setup.orientation, sheet.ORIENTATION_PORTRAIT)
+        finally:
+            prepared.close()
 
     @unittest.skipUnless(shutil.which("tesseract"), "Tesseract is not installed locally")
     def test_ocr_pdf(self):

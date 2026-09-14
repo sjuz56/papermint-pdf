@@ -36,6 +36,16 @@ from papermint_job_queue import (
 )
 from papermint_extra_engines import OCR_LANGUAGES
 from papermint_auth import AuthError, AuthStore, SESSION_SECONDS
+from papermint_limits import (
+    FREE_UPLOAD_BYTES,
+    FREE_UPLOAD_MB,
+    FreeLimitReached,
+    FreeLimitUnavailable,
+    account_quota_key,
+    anonymous_quota_key,
+    release_free_task,
+    reserve_free_task,
+)
 from papermint_ai import (
     AskOctoError,
     AskOctoSessions,
@@ -668,7 +678,12 @@ JANITOR_STOP = threading.Event()
 JANITOR_THREAD = None
 
 
-def save_upload(upload: UploadFile) -> Path:
+def save_upload(
+    upload: UploadFile,
+    *,
+    max_bytes: int = MAX_UPLOAD_BYTES,
+    max_mb: int = MAX_UPLOAD_MB,
+) -> Path:
     suffix = Path(upload.filename or "").suffix.lower()
     path = TMP / f"upload-{threading.get_ident()}-{id(upload)}{suffix}"
 
@@ -686,10 +701,10 @@ def save_upload(upload: UploadFile) -> Path:
                 if not chunk:
                     break
                 written += len(chunk)
-                if written > MAX_UPLOAD_BYTES:
+                if written > max_bytes:
                     raise HTTPException(
                         413,
-                        f"Each uploaded file can be up to {MAX_UPLOAD_MB} MB.",
+                        f"Each uploaded file can be up to {max_mb} MB on your plan.",
                     )
                 stream.write(chunk)
     except Exception:
@@ -697,6 +712,39 @@ def save_upload(upload: UploadFile) -> Path:
         raise
 
     return path
+
+
+def _request_network_identifier(request: Request) -> str:
+    # Use the address appended by the nearest trusted hosting proxy. Taking the
+    # first value would allow a client-supplied X-Forwarded-For prefix to create
+    # unlimited anonymous quota identities.
+    forwarded = request.headers.get("x-forwarded-for", "").rsplit(",", 1)[-1].strip()
+    if forwarded:
+        return forwarded
+    return request.client.host if request.client else "unknown"
+
+
+def _conversion_access(request: Request) -> tuple[str | None, int, int]:
+    """Return quota key and upload limits; PRO users are not Free-limited."""
+    user = AUTH_STORE.user_for_session(request.cookies.get(AUTH_COOKIE))
+    if user and AUTH_STORE.plan_for_user(user) == "pro":
+        return None, MAX_UPLOAD_BYTES, MAX_REQUEST_BYTES
+    key = (
+        account_quota_key(user.id)
+        if user
+        else anonymous_quota_key(_request_network_identifier(request))
+    )
+    return key, FREE_UPLOAD_BYTES, FREE_UPLOAD_BYTES
+
+
+def _refund_free_task(quota_key: str | None) -> None:
+    if not quota_key:
+        return
+    try:
+        release_free_task(quota_key)
+    except FreeLimitUnavailable:
+        # Do not hide the original conversion/queue error from the user.
+        pass
 
 
 def _delete_paths(paths) -> None:
@@ -738,6 +786,7 @@ def cleanup_stale_temp_files() -> None:
 
 @app.post("/api/convert")
 async def convert_tool(
+    request: Request,
     tool: str = Form(...),
     files: List[UploadFile] = File(default=[]),
     pages: str = Form(""),
@@ -879,7 +928,11 @@ async def convert_tool(
         if ocr_language not in OCR_LANGUAGES:
             raise HTTPException(400, "Choose a supported OCR language.")
 
+    quota_key, upload_limit_bytes, request_limit_bytes = _conversion_access(request)
+    upload_limit_mb = FREE_UPLOAD_MB if quota_key else MAX_UPLOAD_MB
+    request_limit_mb = FREE_UPLOAD_MB if quota_key else MAX_REQUEST_MB
     sources: List[Path] = []
+    quota_reserved = False
     if tool == "merge":
         output = TMP / f"merged-{uuid.uuid4().hex}.pdf"
     elif tool == "split":
@@ -932,14 +985,23 @@ async def convert_tool(
     try:
         total_upload_bytes = 0
         for upload in files:
-            source = save_upload(upload)
+            source = save_upload(
+                upload,
+                max_bytes=upload_limit_bytes,
+                max_mb=upload_limit_mb,
+            )
             sources.append(source)
             total_upload_bytes += source.stat().st_size
-            if total_upload_bytes > MAX_REQUEST_BYTES:
+            if total_upload_bytes > request_limit_bytes:
                 raise HTTPException(
                     413,
-                    f"The combined upload can be up to {MAX_REQUEST_MB} MB.",
+                    f"The combined upload can be up to {request_limit_mb} MB on your plan.",
                 )
+
+        free_usage = None
+        if quota_key:
+            free_usage = await run_in_threadpool(reserve_free_task, quota_key)
+            quota_reserved = True
 
         queued = await run_in_threadpool(
             enqueue_tool_job,
@@ -961,17 +1023,38 @@ async def convert_tool(
             redaction_text=text,
             crop_margin=margin,
             ocr_language=ocr_language,
+            free_quota_key=quota_key,
         )
+        if free_usage:
+            queued["free_usage"] = {
+                "used": free_usage["used"],
+                "limit": free_usage["limit"],
+                "remaining": free_usage["remaining"],
+            }
+    except FreeLimitReached as exc:
+        _delete_paths([*sources, output])
+        raise HTTPException(429, str(exc))
+    except FreeLimitUnavailable as exc:
+        _delete_paths([*sources, output])
+        raise HTTPException(503, str(exc))
     except QueueCapacityReached as exc:
+        if quota_reserved:
+            _refund_free_task(quota_key)
         _delete_paths([*sources, output])
         raise HTTPException(429, str(exc))
     except QueueUnavailable as exc:
+        if quota_reserved:
+            _refund_free_task(quota_key)
         _delete_paths([*sources, output])
         raise HTTPException(503, str(exc))
     except HTTPException:
+        if quota_reserved:
+            _refund_free_task(quota_key)
         _delete_paths([*sources, output])
         raise
     except Exception as exc:
+        if quota_reserved:
+            _refund_free_task(quota_key)
         _delete_paths([*sources, output])
         raise HTTPException(500, f"Could not queue the PDF operation: {exc}")
 
@@ -1060,6 +1143,26 @@ def _delete_source_for_job(job_id: str) -> None:
             meta["source"] = None
 
 
+def _release_pdf_word_quota(job_id: str) -> None:
+    quota_key = None
+    with PDF_WORD_META_LOCK:
+        meta = PDF_WORD_META.get(job_id)
+        if not meta or meta.get("free_quota_released"):
+            return
+        quota_key = meta.get("free_quota_key")
+        if not quota_key:
+            return
+        meta["free_quota_released"] = True
+    try:
+        release_free_task(quota_key)
+    except FreeLimitUnavailable:
+        # Let the janitor retry if Redis was briefly unavailable.
+        with PDF_WORD_META_LOCK:
+            meta = PDF_WORD_META.get(job_id)
+            if meta:
+                meta["free_quota_released"] = False
+
+
 def cleanup_pdf_word_jobs() -> None:
     """Clean finished outputs in V28 and remove no-longer-needed input PDFs."""
     try:
@@ -1082,6 +1185,8 @@ def cleanup_pdf_word_jobs() -> None:
         except Exception:
             continue
 
+        if status.get("status") == "failed":
+            _release_pdf_word_quota(job_id)
         if status.get("status") in {"completed", "failed"}:
             _delete_source_for_job(job_id)
 
@@ -1113,7 +1218,7 @@ def start_cleanup_janitor():
 
 
 @app.post("/api/pdf-word/start")
-async def pdf_word_start(file: UploadFile = File(...)):
+async def pdf_word_start(request: Request, file: UploadFile = File(...)):
     cleanup_stale_temp_files()
     cleanup_pdf_word_jobs()
 
@@ -1123,26 +1228,53 @@ async def pdf_word_start(file: UploadFile = File(...)):
     if Path(file.filename).suffix.lower() != ".pdf":
         raise HTTPException(400, "Please upload a PDF file.")
 
-    source = save_upload(file)
+    quota_key, upload_limit_bytes, _ = _conversion_access(request)
+    upload_limit_mb = FREE_UPLOAD_MB if quota_key else MAX_UPLOAD_MB
+    source = save_upload(
+        file,
+        max_bytes=upload_limit_bytes,
+        max_mb=upload_limit_mb,
+    )
+    quota_reserved = False
+    free_usage = None
 
     try:
+        if quota_key:
+            free_usage = await run_in_threadpool(reserve_free_task, quota_key)
+            quota_reserved = True
         # Production web requests use qa=False. V28 still performs preflight,
         # timeout protection, atomic publication and its final integrity check.
         job = PDF_WORD_MANAGER.submit(source, qa=False)
 
     except V28QueueFull as exc:
+        if quota_reserved:
+            _refund_free_task(quota_key)
         source.unlink(missing_ok=True)
         raise HTTPException(429, exc.message)
 
     except V28Rejected as exc:
+        if quota_reserved:
+            _refund_free_task(quota_key)
         source.unlink(missing_ok=True)
         raise HTTPException(400, exc.message)
 
     except V28Error as exc:
+        if quota_reserved:
+            _refund_free_task(quota_key)
         source.unlink(missing_ok=True)
         raise HTTPException(500, exc.message)
 
+    except FreeLimitReached as exc:
+        source.unlink(missing_ok=True)
+        raise HTTPException(429, str(exc))
+
+    except FreeLimitUnavailable as exc:
+        source.unlink(missing_ok=True)
+        raise HTTPException(503, str(exc))
+
     except Exception as exc:
+        if quota_reserved:
+            _refund_free_task(quota_key)
         source.unlink(missing_ok=True)
         raise HTTPException(500, f"Could not start conversion: {exc}")
 
@@ -1153,14 +1285,23 @@ async def pdf_word_start(file: UploadFile = File(...)):
         PDF_WORD_META[job_id] = {
             "source": str(source),
             "download_name": f"{original_stem}.docx",
+            "free_quota_key": quota_key,
+            "free_quota_released": False,
         }
 
-    return {
+    response = {
         "job_id": job_id,
         "status": "queued",
         "queue_depth": job.get("queue_depth", 0),
         "pages": (job.get("preflight") or {}).get("pages"),
     }
+    if free_usage:
+        response["free_usage"] = {
+            "used": free_usage["used"],
+            "limit": free_usage["limit"],
+            "remaining": free_usage["remaining"],
+        }
+    return response
 
 
 @app.get("/api/pdf-word/status/{job_id}")
@@ -1175,6 +1316,8 @@ def pdf_word_status(job_id: str):
     internal_status = job.get("status", "unknown")
 
     if internal_status in {"completed", "failed"}:
+        if internal_status == "failed":
+            _release_pdf_word_quota(job_id)
         _delete_source_for_job(job_id)
 
     return {

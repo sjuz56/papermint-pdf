@@ -69,8 +69,19 @@ All tools except the dedicated PDF→Word V28 pipeline
 are placed in a bounded Redis/RQ queue. One background worker processes one of
 these jobs at a time while
 the web process remains responsive. Up to 20 jobs may wait; additional submissions
-receive HTTP 429 and can be retried later. Each file is limited to 50 MB, a request
-to 100 MB, and each job to 10 minutes by default.
+receive HTTP 429 and can be retried later. The Free plan includes two successful
+tasks per UTC day and uploads up to 10 MB; Pro keeps the 50 MB per-file and 100 MB
+per-request limits. Failed queue or conversion attempts are refunded automatically.
+Each background job is limited to 10 minutes by default.
+
+Set a stable random secret on Render so anonymous counters remain consistent across
+restarts and do not store raw IP addresses:
+
+```text
+PAPERMINT_USAGE_HASH_SECRET=generate-a-long-random-secret
+PAPERMINT_FREE_DAILY_TASK_LIMIT=2
+PAPERMINT_FREE_UPLOAD_MB=10
+```
 
 The Docker image starts a small local Redis instance automatically. If `REDIS_URL`
 is provided, it uses that external Redis/Render Key Value instance instead. The

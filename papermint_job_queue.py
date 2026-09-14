@@ -25,6 +25,7 @@ from papermint_sign_engine import SignError, sign_pdf
 from papermint_watermark_engine import WatermarkError, watermark_pdf
 from papermint_page_numbers_engine import PageNumbersError, add_page_numbers
 from papermint_pdf_ppt_engine import PdfPowerPointError, pdf_to_powerpoint
+from papermint_limits import FreeLimitUnavailable, release_free_task
 from papermint_extra_engines import (
     CompareError,
     HtmlPdfError,
@@ -151,6 +152,7 @@ def enqueue_tool_job(
     redaction_text: str = "",
     crop_margin: float = 10.0,
     ocr_language: str = "eng",
+    free_quota_key: str | None = None,
 ) -> dict:
     """Add one bounded background job and return its public identifier."""
     connection, queue = queue_connection()
@@ -189,6 +191,7 @@ def enqueue_tool_job(
                 "redaction_text": redaction_text,
                 "crop_margin": crop_margin,
                 "ocr_language": ocr_language,
+                "free_quota_key": free_quota_key,
             },
             timeout=JOB_TIMEOUT,
             ttl=JOB_TTL,
@@ -239,6 +242,7 @@ def process_tool_job(
     redaction_text: str = "",
     crop_margin: float = 10.0,
     ocr_language: str = "eng",
+    free_quota_key: str | None = None,
 ) -> dict:
     """Execute one job inside an RQ worker process."""
     job = get_current_job()
@@ -364,12 +368,20 @@ def process_tool_job(
             job.meta["public_error"] = str(exc)
             job.save_meta()
         _delete_files([*sources, output])
+        try:
+            release_free_task(free_quota_key)
+        except FreeLimitUnavailable:
+            pass
         raise
     except Exception:
         if job:
             job.meta["public_error"] = "The document could not be processed."
             job.save_meta()
         _delete_files([*sources, output])
+        try:
+            release_free_task(free_quota_key)
+        except FreeLimitUnavailable:
+            pass
         raise
     finally:
         if succeeded:

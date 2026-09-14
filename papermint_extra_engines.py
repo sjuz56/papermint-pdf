@@ -14,7 +14,8 @@ from zipfile import ZIP_DEFLATED, ZipFile
 
 import fitz
 from docx import Document
-from openpyxl import Workbook
+from openpyxl import Workbook, load_workbook
+from openpyxl.utils import get_column_letter
 from PIL import Image, ImageEnhance, ImageOps, UnidentifiedImageError
 import pdfplumber
 import pytesseract
@@ -83,6 +84,45 @@ class OcrError(ExtraToolError):
 
 class CompareError(ExtraToolError):
     pass
+
+
+def _prepare_xlsx_for_pdf(source: Path) -> None:
+    """Make ordinary unformatted sheets readable when printed to PDF."""
+    workbook = load_workbook(source)
+    try:
+        for sheet in workbook.worksheets:
+            estimated_width = 0.0
+            for column_index in range(1, sheet.max_column + 1):
+                letter = get_column_letter(column_index)
+                dimension = sheet.column_dimensions[letter]
+                current = float(dimension.width or 8.43)
+                longest = 0
+                for row_index in range(1, sheet.max_row + 1):
+                    value = sheet.cell(row=row_index, column=column_index).value
+                    if value is not None:
+                        longest = max(longest, len(str(value)))
+                # Preserve wider author-defined columns while preventing common
+                # text clipping in default-width sheets.
+                fitted = min(60.0, max(current, longest + 2.0))
+                dimension.width = fitted
+                estimated_width += fitted
+
+            sheet.sheet_properties.pageSetUpPr.fitToPage = True
+            sheet.page_setup.fitToWidth = 1
+            sheet.page_setup.fitToHeight = 0
+            sheet.page_setup.paperSize = sheet.PAPERSIZE_A4
+            sheet.page_setup.orientation = (
+                sheet.ORIENTATION_LANDSCAPE
+                if sheet.max_column > 6 or estimated_width > 90
+                else sheet.ORIENTATION_PORTRAIT
+            )
+            sheet.page_margins.left = 0.25
+            sheet.page_margins.right = 0.25
+            sheet.page_margins.top = 0.4
+            sheet.page_margins.bottom = 0.4
+        workbook.save(source)
+    finally:
+        workbook.close()
 
 
 def _atomic_temp(destination: Path, suffix: str) -> Path:
@@ -242,6 +282,8 @@ def office_to_pdf(source: str | Path, output: str | Path, tool: str) -> dict:
     temporary = _atomic_temp(destination, ".pdf")
     try:
         shutil.copyfile(source_path, local_source)
+        if tool == "excel-pdf" and local_source.suffix.lower() == ".xlsx":
+            _prepare_xlsx_for_pdf(local_source)
         environment = os.environ.copy()
         environment.update({"HOME": str(home_dir), "XDG_CACHE_HOME": str(home_dir / ".cache")})
         command = [

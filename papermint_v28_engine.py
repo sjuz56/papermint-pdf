@@ -858,7 +858,13 @@ from collections import Counter
 from PIL import ImageFilter
 
 
-def add_precision_page_table_v20(doc:Document, page:fitz.Page, grid_cols=48, font_factor=0.92):
+def add_precision_page_table_v20(
+    doc: Document,
+    page: fitz.Page,
+    grid_cols=48,
+    font_factor=0.92,
+    reserve_pt=54.0,
+):
     objs=_extract_horizontal_lines(page)
     pw=float(page.rect.width); ph=float(page.rect.height)
     objs=[o for o in objs if not (o['bbox'][0] > pw*0.90 and (o['bbox'][2]-o['bbox'][0]) < 18 and len(o['text'].strip()) <= 3)]
@@ -871,7 +877,10 @@ def add_precision_page_table_v20(doc:Document, page:fitz.Page, grid_cols=48, fon
     for i,y in enumerate(ys):
         nxt=ys[i+1] if i+1<len(ys) else ph
         row_heights.append(max(1.0,nxt-y))
-    target=max(20.0,ph-25.0)
+    # LibreOffice needs room for the mandatory paragraph/section marker after a
+    # full-page table. Without this reserve, some source pages spill into an
+    # additional nearly-empty page when the DOCX is rendered or printed.
+    target=max(20.0,ph-float(reserve_pt))
     scale=min(1.0,target/max(1e-6,sum(row_heights)))
     row_heights=[max(0.85,h*scale) for h in row_heights]
     excess=sum(row_heights)-target
