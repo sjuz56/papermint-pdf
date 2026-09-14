@@ -169,13 +169,16 @@ document.querySelectorAll('[data-auth-mode]').forEach(button => {
 
 authForm?.addEventListener('submit', async event => {
   event.preventDefault();
+  const completedMode = authMode;
+  const submitButton = document.getElementById('authSubmit');
+  submitButton.disabled = true;
   authStatus.classList.remove('error');
-  authStatus.textContent = authMode === 'register'
+  authStatus.textContent = completedMode === 'register'
     ? accountT('auth.creating')
     : accountT('auth.signingIn');
 
   const fields = new FormData(authForm);
-  const endpoint = authMode === 'register'
+  const endpoint = completedMode === 'register'
     ? '/api/auth/register'
     : '/api/auth/login';
 
@@ -198,15 +201,20 @@ authForm?.addEventListener('submit', async event => {
     authForm.reset();
     setPasswordVisibility(false);
     renderAccount();
+    showBillingNotice(`${accountT('auth.signedAs')} ${data.email}.`);
 
     if (selectedPlan) {
       const plan = selectedPlan;
       closeAuth();
       openCheckoutConsent(plan);
+    } else {
+      closeAuth();
     }
   } catch (error) {
     authStatus.textContent = error.message;
     authStatus.classList.add('error');
+  } finally {
+    submitButton.disabled = false;
   }
 });
 
