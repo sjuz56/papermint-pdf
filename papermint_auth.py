@@ -203,6 +203,15 @@ class AuthStore:
                 )
                 """
             )
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS stripe_webhook_events (
+                    event_id TEXT PRIMARY KEY,
+                    event_type TEXT NOT NULL,
+                    processed_at BIGINT NOT NULL
+                )
+                """
+            )
 
     def register(self, email_value: str, password_value: str) -> AuthUser:
         email = normalize_email(email_value)
@@ -360,6 +369,42 @@ class AuthStore:
                     (user_id, plan, current_period_end, now),
                 )
 
+    def stripe_event_processed(self, event_id: str) -> bool:
+        if not event_id:
+            return False
+        placeholder = self._placeholder
+        with self._connect() as connection:
+            cursor = connection.cursor()
+            cursor.execute(
+                f"SELECT 1 FROM stripe_webhook_events WHERE event_id = {placeholder}",
+                (event_id,),
+            )
+            return cursor.fetchone() is not None
+
+    def mark_stripe_event_processed(self, event_id: str, event_type: str) -> None:
+        if not event_id:
+            return
+        placeholder = self._placeholder
+        with self._connect() as connection:
+            cursor = connection.cursor()
+            if self.postgres:
+                cursor.execute(
+                    """
+                    INSERT INTO stripe_webhook_events (event_id, event_type, processed_at)
+                    VALUES (%s, %s, %s)
+                    ON CONFLICT (event_id) DO NOTHING
+                    """,
+                    (event_id, event_type, int(time.time())),
+                )
+            else:
+                cursor.execute(
+                    """
+                    INSERT OR IGNORE INTO stripe_webhook_events
+                        (event_id, event_type, processed_at)
+                    VALUES (?, ?, ?)
+                    """,
+                    (event_id, event_type, int(time.time())),
+                )
     def set_billing_customer(
         self,
         user_id: str,

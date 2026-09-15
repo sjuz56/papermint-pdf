@@ -1,11 +1,13 @@
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from starlette.background import BackgroundTask
 from starlette.concurrency import run_in_threadpool
 from pathlib import Path
 from typing import List
+from collections import defaultdict, deque
+from html import escape
 import os
 import shutil
 import threading
@@ -147,6 +149,54 @@ PDF_WORD_OUTPUTS.mkdir(exist_ok=True)
 
 app = FastAPI(title="PDFaspect PDF Toolbox")
 
+_RATE_LIMITS: dict[str, deque[float]] = defaultdict(deque)
+_RATE_LIMIT_LOCK = threading.Lock()
+
+
+def _client_address(request: Request) -> str:
+    forwarded = request.headers.get("cf-connecting-ip") or request.headers.get("x-forwarded-for")
+    if forwarded:
+        return forwarded.split(",", 1)[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
+def _rate_limit(request: Request, bucket: str, limit: int, window: int) -> None:
+    now = time.monotonic()
+    key = f"{bucket}:{_client_address(request)}"
+    with _RATE_LIMIT_LOCK:
+        attempts = _RATE_LIMITS[key]
+        while attempts and attempts[0] <= now - window:
+            attempts.popleft()
+        if len(attempts) >= limit:
+            retry_after = max(1, int(window - (now - attempts[0])))
+            raise HTTPException(
+                429,
+                "Too many requests. Please try again later.",
+                headers={"Retry-After": str(retry_after)},
+            )
+        attempts.append(now)
+
+
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault(
+        "Content-Security-Policy",
+        "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; "
+        "form-action 'self' https://checkout.stripe.com; img-src 'self' data: blob:; "
+        "style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; font-src 'self'",
+    )
+    forwarded_proto = request.headers.get("x-forwarded-proto", "").split(",", 1)[0].strip()
+    if request.url.scheme == "https" or forwarded_proto == "https":
+        response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+    if request.url.path.startswith("/api/"):
+        response.headers.setdefault("Cache-Control", "no-store")
+    return response
+
 app.mount(
     "/static",
     StaticFiles(directory=BASE / "static"),
@@ -187,12 +237,61 @@ TOOLS = [
 
 @app.get("/", response_class=HTMLResponse)
 def home():
-    return (BASE / "static" / "index.html").read_text(encoding="utf-8")
+    page = (BASE / "static" / "index.html").read_text(encoding="utf-8")
+    cards = "".join(
+        f'<a class="card" href="/tools/{escape(tool_id)}"><div class="icon">PDF</div>'
+        f'<h3>{escape(name)}</h3><p>{escape(description)}</p></a>'
+        for tool_id, name, description in TOOLS
+    )
+    return page.replace("<!-- TOOL_CARDS -->", cards)
 
 
 @app.get("/terms", response_class=HTMLResponse)
 def terms():
     return (BASE / "static" / "terms.html").read_text(encoding="utf-8")
+
+
+@app.get("/privacy", response_class=HTMLResponse)
+def privacy():
+    return (BASE / "static" / "privacy.html").read_text(encoding="utf-8")
+
+
+@app.get("/robots.txt", response_class=PlainTextResponse)
+def robots():
+    return "User-agent: *\nAllow: /\nSitemap: https://pdfaspect.com/sitemap.xml\n"
+
+
+@app.get("/sitemap.xml")
+def sitemap():
+    paths = ["", "terms", "privacy", *(f"tools/{tool_id}" for tool_id, _, _ in TOOLS)]
+    urls = "".join(
+        f"<url><loc>https://pdfaspect.com/{path}</loc><lastmod>2026-09-15</lastmod></url>"
+        for path in paths
+    )
+    return Response(
+        f'<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">{urls}</urlset>',
+        media_type="application/xml",
+    )
+
+
+@app.get("/tools/{tool_id}", response_class=HTMLResponse)
+def tool_page(tool_id: str):
+    tool = next((item for item in TOOLS if item[0] == tool_id), None)
+    if not tool:
+        raise HTTPException(404, "PDF tool not found.")
+    _, name, description = tool
+    title = escape(f"{name} online — PDFaspect")
+    summary = escape(description)
+    canonical = f"https://pdfaspect.com/tools/{escape(tool_id)}"
+    return f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>{title}</title>
+<meta name="description" content="{summary}"><link rel="canonical" href="{canonical}">
+<link rel="icon" href="/static/assets/octopus-logo.png"><link rel="stylesheet" href="/static/style.css"></head>
+<body class="legal-page"><header class="topbar legal-topbar"><a class="brand" href="/">PDF<span>aspect</span></a>
+<a class="ghost" href="/#tools">All PDF tools</a></header><main class="legal-shell"><div class="legal-hero">
+<div class="pill">Online PDF tool</div><h1>{escape(name)}</h1><p>{summary}</p>
+<a class="primary tool-page-action" href="/?tool={escape(tool_id)}#tools">Open {escape(name)}</a></div></main>
+<footer><span>© 2026 PDFaspect</span><span class="footer-links"><a href="/terms">Terms</a><a href="/privacy">Privacy</a></span></footer></body></html>"""
 
 
 @app.get("/api/tools")
@@ -244,6 +343,7 @@ def _auth_response(user, token: str, request: Request) -> JSONResponse:
 
 @app.post("/api/auth/register")
 def register_account(credentials: AuthCredentials, request: Request):
+    _rate_limit(request, "register", 5, 15 * 60)
     try:
         user = AUTH_STORE.register(credentials.email, credentials.password)
         token = AUTH_STORE.create_session(user.id)
@@ -254,6 +354,7 @@ def register_account(credentials: AuthCredentials, request: Request):
 
 @app.post("/api/auth/login")
 def login_account(credentials: AuthCredentials, request: Request):
+    _rate_limit(request, "login", 10, 15 * 60)
     try:
         user = AUTH_STORE.authenticate(credentials.email, credentials.password)
         token = AUTH_STORE.create_session(user.id)
@@ -301,7 +402,7 @@ def _public_url(request: Request) -> str:
 
 
 def _stripe_configured(plan: str | None = None) -> bool:
-    if not STRIPE_SECRET_KEY:
+    if not STRIPE_SECRET_KEY or not AUTH_STORE.postgres:
         return False
     return bool(STRIPE_PRICE_IDS.get(plan, "")) if plan else all(STRIPE_PRICE_IDS.values())
 
@@ -371,6 +472,7 @@ def billing_status(request: Request):
 
 @app.post("/api/billing/checkout")
 async def create_checkout(payload: CheckoutPlan, request: Request):
+    _rate_limit(request, "checkout", 10, 10 * 60)
     user = _signed_in_user(request)
     plan = (payload.plan or "").strip().lower()
     if plan not in STRIPE_PRICE_IDS:
@@ -388,7 +490,7 @@ async def create_checkout(payload: CheckoutPlan, request: Request):
     checkout_metadata = {
         "user_id": user.id,
         "plan": plan,
-        "terms_version": "2026-09-12",
+        "terms_version": "2026-09-15",
         "terms_accepted_at": accepted_at,
     }
     parameters = {
@@ -452,6 +554,9 @@ async def stripe_webhook(request: Request):
         raise HTTPException(400, "Invalid Stripe webhook.") from exc
 
     event_type = _stripe_value(event, "type", "")
+    event_id = str(_stripe_value(event, "id", "") or "")
+    if event_id and AUTH_STORE.stripe_event_processed(event_id):
+        return {"received": True, "duplicate": True}
     event_data = _stripe_value(_stripe_value(event, "data", {}), "object", {})
     if event_type == "checkout.session.completed":
         metadata = _stripe_metadata(event_data)
@@ -480,7 +585,17 @@ async def stripe_webhook(request: Request):
         "customer.subscription.updated",
         "customer.subscription.deleted",
     }:
-        _sync_stripe_subscription(event_data)
+        subscription_id = str(_stripe_value(event_data, "id", "") or "")
+        try:
+            current = await run_in_threadpool(stripe.Subscription.retrieve, subscription_id)
+            _sync_stripe_subscription(current)
+        except stripe.StripeError as exc:
+            if event_type == "customer.subscription.deleted":
+                _sync_stripe_subscription(event_data)
+            else:
+                raise HTTPException(502, "Subscription state could not be confirmed.") from exc
+    if event_id:
+        AUTH_STORE.mark_stripe_event_processed(event_id, str(event_type))
     return {"received": True}
 
 
@@ -541,6 +656,7 @@ async def ask_octo_document(
     ocr_language: str = Form("eng"),
     response_language: str = Form("en"),
 ):
+    _rate_limit(request, "ai-document", 20, 60)
     user = _ask_octo_user(request)
     answer_language = _ai_language(response_language)
     if not ai_is_configured():
@@ -597,6 +713,7 @@ async def ask_octo_document(
 
 @app.post("/api/ai/question")
 async def ask_octo_question(payload: AskOctoQuestion, request: Request):
+    _rate_limit(request, "ai-question", 30, 60)
     user = _ask_octo_user(request)
     answer_language = _ai_language(payload.response_language)
     if not ai_is_configured():
@@ -803,6 +920,7 @@ async def convert_tool(
     margin: float = Form(10.0),
     ocr_language: str = Form("eng"),
 ):
+    _rate_limit(request, "convert", 30, 60)
     cleanup_stale_temp_files()
 
     if tool not in {
@@ -1218,6 +1336,7 @@ def start_cleanup_janitor():
 
 @app.post("/api/pdf-word/start")
 async def pdf_word_start(request: Request, file: UploadFile = File(...)):
+    _rate_limit(request, "pdf-word", 30, 60)
     cleanup_stale_temp_files()
     cleanup_pdf_word_jobs()
 
@@ -1374,6 +1493,7 @@ def pdf_word_download(job_id: str):
         path=str(output_path),
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         filename=download_name,
+        background=BackgroundTask(_delete_paths, [output_path]),
     )
 
 

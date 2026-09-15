@@ -83,7 +83,7 @@ function render(list) {
   const localized = list.map(tool => i18n?.translateTool(tool) || tool);
 
   g.innerHTML = localized.map((tool, i) => `
-    <article
+    <a href="/tools/${encodeURIComponent(tool.id)}"
       class="card${tool.pro ? ' pro-card' : ''}"
       data-tool-index="${i}"
     >
@@ -94,11 +94,14 @@ function render(list) {
 
       <h3>${tool.name}</h3>
       <p>${tool.description}</p>
-    </article>
+    </a>
   `).join('');
 
   g.querySelectorAll('.card').forEach((card, i) => {
-    card.addEventListener('click', () => openTool(list[i]));
+    card.addEventListener('click', event => {
+      event.preventDefault();
+      openTool(list[i]);
+    });
   });
 }
 
@@ -174,6 +177,7 @@ function openTool(tool) {
   document
     .getElementById('modal')
     .classList.remove('hidden');
+  document.getElementById('modal')?.setAttribute('aria-hidden', 'false');
 
   document
     .getElementById('modalTitle')
@@ -548,16 +552,23 @@ function openTool(tool) {
     }
     document.getElementById('pricing')?.scrollIntoView({behavior: 'smooth'});
   });
+  document.getElementById('toolClose')?.focus();
 }
 
 function closeModal() {
-  document
-    .getElementById('modal')
-    .classList.add('hidden');
+  const modal = document.getElementById('modal');
+  modal?.classList.add('hidden');
+  modal?.setAttribute('aria-hidden', 'true');
 }
 
 window.openTool = openTool;
 window.closeModal = closeModal;
+document.getElementById('toolClose')?.addEventListener('click', closeModal);
+document.addEventListener('keydown', event => {
+  if (event.key === 'Escape' && !document.getElementById('modal')?.classList.contains('hidden')) {
+    closeModal();
+  }
+});
 
 const dz = document.getElementById('dropZone');
 const fi = document.getElementById('files');
@@ -1060,3 +1071,17 @@ window.addEventListener('papermint:languagechange', () => {
 });
 
 init();
+
+const requestedTool = new URLSearchParams(window.location.search).get('tool');
+if (requestedTool) {
+  window.addEventListener('load', () => {
+    const timer = window.setInterval(() => {
+      const tool = tools.find(item => item.id === requestedTool);
+      if (tool) {
+        window.clearInterval(timer);
+        openTool(tool);
+      }
+    }, 50);
+    window.setTimeout(() => window.clearInterval(timer), 5000);
+  });
+}

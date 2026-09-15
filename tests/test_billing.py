@@ -33,6 +33,7 @@ class StripeBillingApiTests(unittest.TestCase):
         with (
             patch.object(app_module, "AUTH_STORE", self.store),
             patch.object(app_module, "STRIPE_SECRET_KEY", "sk_test_fake"),
+            patch.object(app_module, "_stripe_configured", return_value=True),
             patch.object(
                 app_module,
                 "STRIPE_PRICE_IDS",
@@ -80,7 +81,7 @@ class StripeBillingApiTests(unittest.TestCase):
         self.assertEqual(parameters["mode"], "subscription")
         self.assertEqual(parameters["line_items"][0]["price"], "price_monthly")
         self.assertEqual(parameters["metadata"]["user_id"], user.id)
-        self.assertEqual(parameters["metadata"]["terms_version"], "2026-09-12")
+        self.assertEqual(parameters["metadata"]["terms_version"], "2026-09-15")
         self.assertTrue(parameters["metadata"]["terms_accepted_at"].isdigit())
         self.assertEqual(parameters["customer_email"], user.email)
 
@@ -110,9 +111,15 @@ class StripeBillingApiTests(unittest.TestCase):
                     app_module.stripe.Webhook,
                     "construct_event",
                     return_value={
+                        "id": f"evt_{event_type}",
                         "type": event_type,
                         "data": {"object": subscription},
                     },
+                ),
+                patch.object(
+                    app_module.stripe.Subscription,
+                    "retrieve",
+                    return_value=subscription,
                 ),
             ):
                 response = self.client.post(
@@ -125,6 +132,34 @@ class StripeBillingApiTests(unittest.TestCase):
 
         billing = self.store.billing_for_user(user.id)
         self.assertEqual(billing.stripe_customer_id, "cus_test_123")
+
+    def test_webhook_ignores_duplicate_event(self):
+        user = self.sign_in()
+        subscription = {
+            "id": "sub_duplicate",
+            "customer": "cus_duplicate",
+            "status": "active",
+            "current_period_end": 4_102_444_800,
+            "metadata": {"user_id": user.id, "plan": "monthly"},
+            "items": {"data": [{"price": {"id": "price_monthly"}}]},
+        }
+        event = {
+            "id": "evt_duplicate",
+            "type": "customer.subscription.updated",
+            "data": {"object": subscription},
+        }
+        with (
+            self.stripe_config(),
+            patch.object(app_module, "STRIPE_WEBHOOK_SECRET", "whsec_test"),
+            patch.object(app_module.stripe.Webhook, "construct_event", return_value=event),
+            patch.object(app_module.stripe.Subscription, "retrieve", return_value=subscription) as retrieve,
+        ):
+            first = self.client.post("/api/billing/webhook", content=b"{}", headers={"stripe-signature": "valid"})
+            second = self.client.post("/api/billing/webhook", content=b"{}", headers={"stripe-signature": "valid"})
+
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.json(), {"received": True, "duplicate": True})
+        self.assertEqual(retrieve.call_count, 1)
 
     def test_customer_portal_is_bound_to_signed_in_customer(self):
         user = self.sign_in()
