@@ -182,6 +182,65 @@ class StripeBillingApiTests(unittest.TestCase):
         self.assertEqual(response.json()["url"], "https://billing.stripe.com/p/session/test")
         self.assertEqual(create_portal.call_args.kwargs["customer"], "cus_test_123")
 
+    def assert_cancellation_scheduled(self, plan: str):
+        user = self.sign_in()
+        subscription_id = f"sub_{plan}"
+        price_id = f"price_{plan}"
+        period_end = 4_102_444_800
+        self.store.set_billing_customer(
+            user.id,
+            customer_id="cus_cancel_test",
+            subscription_id=subscription_id,
+        )
+        self.store.set_subscription(
+            user.id,
+            plan,
+            period_end,
+            cancel_at_period_end=False,
+            status="active",
+        )
+        stripe_subscription = {
+            "id": subscription_id,
+            "customer": "cus_cancel_test",
+            "status": "active",
+            "cancel_at_period_end": True,
+            "current_period_end": period_end,
+            "metadata": {"user_id": user.id, "plan": plan},
+            "items": {"data": [{"price": {"id": price_id}}]},
+        }
+
+        with (
+            self.stripe_config(),
+            patch.object(
+                app_module.stripe.Subscription,
+                "modify",
+                return_value=stripe_subscription,
+            ) as modify,
+        ):
+            response = self.client.post("/api/billing/cancel")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["plan"], plan)
+        self.assertTrue(response.json()["cancel_at_period_end"])
+        modify.assert_called_once_with(
+            subscription_id,
+            cancel_at_period_end=True,
+        )
+
+        # Cancellation only stops renewal: access remains paid until period_end.
+        self.assertEqual(self.store.plan_for_user(user), "pro")
+        saved = self.store.subscription_for_user(user.id)
+        self.assertEqual(saved.plan, plan)
+        self.assertEqual(saved.current_period_end, period_end)
+        self.assertTrue(saved.cancel_at_period_end)
+        self.assertEqual(saved.status, "active")
+
+    def test_monthly_subscription_cancels_at_period_end(self):
+        self.assert_cancellation_scheduled("monthly")
+
+    def test_yearly_subscription_cancels_at_period_end(self):
+        self.assert_cancellation_scheduled("yearly")
+
 
 if __name__ == "__main__":
     unittest.main()

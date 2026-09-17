@@ -63,9 +63,30 @@ function renderAccount() {
     const planBadge = document.getElementById('accountPlanBadge');
     planBadge.textContent = pro ? 'PRO' : 'FREE';
     planBadge.classList.toggle('pro', pro);
+    const periodEnd = currentAccount.subscription_period_end;
+    const subscriptionStatus = document.getElementById('subscriptionStatusText');
+    if (subscriptionStatus) {
+      const hasDate = Number.isFinite(Number(periodEnd)) && Number(periodEnd) > 0;
+      if (pro && hasDate) {
+        const date = new Intl.DateTimeFormat(document.documentElement.lang || 'en', {
+          year: 'numeric', month: 'long', day: 'numeric'
+        }).format(new Date(Number(periodEnd) * 1000));
+        subscriptionStatus.textContent = currentAccount.subscription_cancel_at_period_end
+          ? accountT('billing.endsOn', {date})
+          : accountT('billing.renewsOn', {date});
+        subscriptionStatus.classList.remove('hidden');
+      } else {
+        subscriptionStatus.textContent = '';
+        subscriptionStatus.classList.add('hidden');
+      }
+    }
     document.getElementById('manageSubscriptionButton')?.classList.toggle(
       'hidden',
       !currentAccount.billing_managed
+    );
+    document.getElementById('cancelSubscriptionButton')?.classList.toggle(
+      'hidden',
+      !pro || !currentAccount.billing_managed || currentAccount.subscription_cancel_at_period_end
     );
   } else {
     signedOut.classList.remove('hidden');
@@ -236,6 +257,25 @@ document.getElementById('manageSubscriptionButton')?.addEventListener('click', a
     safeStripeRedirect(data.url, 'billing.stripe.com');
   } catch (error) {
     showBillingNotice(error.message);
+  }
+});
+
+document.getElementById('cancelSubscriptionButton')?.addEventListener('click', async event => {
+  if (!window.confirm(accountT('billing.cancelConfirm'))) return;
+  const button = event.currentTarget;
+  button.disabled = true;
+  try {
+    const response = await fetch('/api/billing/cancel', {method: 'POST'});
+    const data = await readJson(response);
+    if (!response.ok) throw new Error(data.detail || accountT('billing.cancelFailed'));
+    currentAccount.subscription_cancel_at_period_end = true;
+    currentAccount.subscription_period_end = data.current_period_end;
+    renderAccount();
+    showBillingNotice(accountT('billing.cancelScheduled'));
+  } catch (error) {
+    showBillingNotice(error.message);
+  } finally {
+    button.disabled = false;
   }
 });
 

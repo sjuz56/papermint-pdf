@@ -117,6 +117,7 @@
         <li data-i18n="pricing.higherLimits">Larger files and higher usage limits</li>
         <li data-i18n="pricing.fastQueue">Files up to 50 MB</li>
         <li data-i18n="pricing.bestPrice">Best price — equal to €5 per month</li>
+        <li data-i18n="pricing.cancel">Cancel anytime</li>
       </ul>
       <button class="primary full" type="button" data-plan="yearly" data-i18n="pricing.chooseYearly">Choose yearly</button>
     </article>
@@ -154,7 +155,9 @@
       <h2 data-i18n="auth.yourAccount">Your account</h2>
       <p><span data-i18n="auth.signedAs">You are signed in as</span> <strong id="accountEmail"></strong>.</p>
       <div id="accountPlanBadge" class="account-plan-badge">FREE</div>
+      <p id="subscriptionStatusText" class="subscription-status hidden"></p>
       <button class="primary full hidden" id="manageSubscriptionButton" type="button" data-i18n="billing.manage">Manage subscription</button>
+      <button class="price-button danger hidden" id="cancelSubscriptionButton" type="button" data-i18n="billing.cancelRenewal">Cancel renewal</button>
       <button class="price-button" id="logoutButton" type="button" data-i18n="auth.signOut">Sign out</button>
     </div>
   </div>

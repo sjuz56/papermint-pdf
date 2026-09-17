@@ -35,6 +35,9 @@ The monthly and yearly Pro buttons use Stripe-hosted Checkout. After a signed-in
 customer accepts the terms on PDFaspect, Stripe handles the payment details. Signed
 webhooks activate or revoke Pro access, and the account dialog links existing paying
 customers to Stripe's Customer Portal for invoices, card changes, and cancellation.
+The account dialog also provides a first-party cancellation button. It always sets
+`cancel_at_period_end=true`, so both monthly and yearly customers keep Pro through
+the paid period, no prorated refund is created, and the next renewal is stopped.
 
 Create one Stripe product with recurring EUR prices of €7/month and €60/year, then
 set these Render environment variables:
@@ -56,6 +59,10 @@ customer.subscription.created
 customer.subscription.updated
 customer.subscription.deleted
 ```
+
+If cancellation is also enabled in Stripe's Customer Portal, configure it to cancel
+**at the end of the billing period**, never immediately. The application webhook
+stores `cancel_at_period_end` and displays the exact Pro end date in the account.
 
 Use Stripe sandbox keys and prices for testing before switching all four Stripe
 values to live mode. Never commit Stripe secrets to Git. A persistent `DATABASE_URL`

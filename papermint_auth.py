@@ -51,6 +51,15 @@ class BillingRecord:
     stripe_subscription_id: str | None
 
 
+@dataclass(frozen=True)
+class SubscriptionRecord:
+    user_id: str
+    plan: str
+    current_period_end: int | None
+    cancel_at_period_end: bool
+    status: str
+
+
 def normalize_email(value: str) -> str:
     email = (value or "").strip().lower()
     if len(email) > 254 or not EMAIL_RE.fullmatch(email):
@@ -175,11 +184,35 @@ class AuthStore:
                     user_id TEXT PRIMARY KEY,
                     plan TEXT NOT NULL,
                     current_period_end BIGINT,
+                    cancel_at_period_end BOOLEAN NOT NULL DEFAULT FALSE,
+                    status TEXT NOT NULL DEFAULT 'free',
                     updated_at BIGINT NOT NULL,
                     FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
                 )
                 """
             )
+            if self.postgres:
+                cursor.execute(
+                    "ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS "
+                    "cancel_at_period_end BOOLEAN NOT NULL DEFAULT FALSE"
+                )
+                cursor.execute(
+                    "ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS "
+                    "status TEXT NOT NULL DEFAULT 'free'"
+                )
+            else:
+                cursor.execute("PRAGMA table_info(subscriptions)")
+                subscription_columns = {row[1] for row in cursor.fetchall()}
+                if "cancel_at_period_end" not in subscription_columns:
+                    cursor.execute(
+                        "ALTER TABLE subscriptions ADD COLUMN "
+                        "cancel_at_period_end BOOLEAN NOT NULL DEFAULT FALSE"
+                    )
+                if "status" not in subscription_columns:
+                    cursor.execute(
+                        "ALTER TABLE subscriptions ADD COLUMN "
+                        "status TEXT NOT NULL DEFAULT 'free'"
+                    )
             cursor.execute(
                 """
                 CREATE TABLE IF NOT EXISTS ai_usage (
@@ -336,10 +369,14 @@ class AuthStore:
         user_id: str,
         plan: str,
         current_period_end: int | None = None,
+        *,
+        cancel_at_period_end: bool = False,
+        status: str | None = None,
     ) -> None:
-        """Upsert subscription state for the future Stripe webhook and tests."""
+        """Upsert the authoritative subscription state received from Stripe."""
         if plan not in {"free", "monthly", "yearly", "pro"}:
             raise AuthError("Unknown subscription plan.")
+        stripe_status = (status or ("active" if plan != "free" else "canceled")).strip()
         placeholder = self._placeholder
         now = int(time.time())
         with self._connect() as connection:
@@ -347,27 +384,68 @@ class AuthStore:
             if self.postgres:
                 cursor.execute(
                     """
-                    INSERT INTO subscriptions (user_id, plan, current_period_end, updated_at)
-                    VALUES (%s, %s, %s, %s)
+                    INSERT INTO subscriptions
+                        (user_id, plan, current_period_end, cancel_at_period_end, status, updated_at)
+                    VALUES (%s, %s, %s, %s, %s, %s)
                     ON CONFLICT (user_id) DO UPDATE SET
                         plan = EXCLUDED.plan,
                         current_period_end = EXCLUDED.current_period_end,
+                        cancel_at_period_end = EXCLUDED.cancel_at_period_end,
+                        status = EXCLUDED.status,
                         updated_at = EXCLUDED.updated_at
                     """,
-                    (user_id, plan, current_period_end, now),
+                    (
+                        user_id,
+                        plan,
+                        current_period_end,
+                        cancel_at_period_end,
+                        stripe_status,
+                        now,
+                    ),
                 )
             else:
                 cursor.execute(
                     """
-                    INSERT INTO subscriptions (user_id, plan, current_period_end, updated_at)
-                    VALUES (?, ?, ?, ?)
+                    INSERT INTO subscriptions
+                        (user_id, plan, current_period_end, cancel_at_period_end, status, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?)
                     ON CONFLICT(user_id) DO UPDATE SET
                         plan = excluded.plan,
                         current_period_end = excluded.current_period_end,
+                        cancel_at_period_end = excluded.cancel_at_period_end,
+                        status = excluded.status,
                         updated_at = excluded.updated_at
                     """,
-                    (user_id, plan, current_period_end, now),
+                    (
+                        user_id,
+                        plan,
+                        current_period_end,
+                        int(cancel_at_period_end),
+                        stripe_status,
+                        now,
+                    ),
                 )
+
+    def subscription_for_user(self, user_id: str) -> SubscriptionRecord | None:
+        placeholder = self._placeholder
+        with self._connect() as connection:
+            cursor = connection.cursor()
+            cursor.execute(
+                f"SELECT user_id, plan, current_period_end, "
+                f"cancel_at_period_end, status FROM subscriptions "
+                f"WHERE user_id = {placeholder}",
+                (user_id,),
+            )
+            row = cursor.fetchone()
+        if not row:
+            return None
+        return SubscriptionRecord(
+            user_id=row[0],
+            plan=row[1],
+            current_period_end=int(row[2]) if row[2] is not None else None,
+            cancel_at_period_end=bool(row[3]),
+            status=row[4],
+        )
 
     def stripe_event_processed(self, event_id: str) -> bool:
         if not event_id:

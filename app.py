@@ -419,14 +419,8 @@ def analytics_summary(request: Request, days: int = 30):
 
 
 def _auth_response(user, token: str, request: Request) -> JSONResponse:
-    billing = AUTH_STORE.billing_for_user(user.id)
     response = JSONResponse(
-        {
-            "authenticated": True,
-            "email": user.email,
-            "plan": AUTH_STORE.plan_for_user(user),
-            "billing_managed": bool(billing and billing.stripe_customer_id),
-        }
+        _account_payload(user)
     )
     forwarded_proto = request.headers.get("x-forwarded-proto", "")
     secure = request.url.scheme == "https" or forwarded_proto.split(",")[0].strip() == "https"
@@ -440,6 +434,25 @@ def _auth_response(user, token: str, request: Request) -> JSONResponse:
         path="/",
     )
     return response
+
+
+def _account_payload(user) -> dict:
+    billing = AUTH_STORE.billing_for_user(user.id)
+    subscription = AUTH_STORE.subscription_for_user(user.id)
+    return {
+        "authenticated": True,
+        "email": user.email,
+        "plan": AUTH_STORE.plan_for_user(user),
+        "billing_managed": bool(
+            billing and billing.stripe_customer_id and billing.stripe_subscription_id
+        ),
+        "subscription_plan": subscription.plan if subscription else "free",
+        "subscription_status": subscription.status if subscription else "free",
+        "subscription_period_end": subscription.current_period_end if subscription else None,
+        "subscription_cancel_at_period_end": bool(
+            subscription and subscription.cancel_at_period_end
+        ),
+    }
 
 
 @app.post("/api/auth/register")
@@ -470,13 +483,7 @@ def current_account(request: Request):
     user = AUTH_STORE.user_for_session(request.cookies.get(AUTH_COOKIE))
     if not user:
         return {"authenticated": False}
-    billing = AUTH_STORE.billing_for_user(user.id)
-    return {
-        "authenticated": True,
-        "email": user.email,
-        "plan": AUTH_STORE.plan_for_user(user),
-        "billing_managed": bool(billing and billing.stripe_customer_id),
-    }
+    return _account_payload(user)
 
 
 @app.post("/api/auth/logout")
@@ -549,6 +556,9 @@ def _sync_stripe_subscription(subscription) -> None:
     requested_plan = _subscription_plan(subscription)
     plan = requested_plan if status in {"active", "trialing"} else "free"
     period_end = _stripe_value(subscription, "current_period_end")
+    cancel_at_period_end = bool(
+        _stripe_value(subscription, "cancel_at_period_end", False)
+    )
     AUTH_STORE.set_billing_customer(
         user_id,
         customer_id=customer_id or None,
@@ -558,17 +568,26 @@ def _sync_stripe_subscription(subscription) -> None:
         user_id,
         plan,
         int(period_end) if period_end is not None else None,
+        cancel_at_period_end=cancel_at_period_end,
+        status=status,
     )
 
 
 @app.get("/api/billing/status")
 def billing_status(request: Request):
     user = AUTH_STORE.user_for_session(request.cookies.get(AUTH_COOKIE))
+    account = _account_payload(user) if user else {}
     return {
         "configured": _stripe_configured(),
         "authenticated": bool(user),
-        "plan": AUTH_STORE.plan_for_user(user) if user else "free",
-        "portal_available": bool(user and AUTH_STORE.billing_for_user(user.id)),
+        "plan": account.get("plan", "free"),
+        "portal_available": account.get("billing_managed", False),
+        "subscription_plan": account.get("subscription_plan", "free"),
+        "subscription_status": account.get("subscription_status", "free"),
+        "subscription_period_end": account.get("subscription_period_end"),
+        "subscription_cancel_at_period_end": account.get(
+            "subscription_cancel_at_period_end", False
+        ),
     }
 
 
@@ -638,6 +657,44 @@ async def create_billing_portal(request: Request):
     except stripe.StripeError as exc:
         raise HTTPException(502, "Subscription management could not be opened.") from exc
     return {"url": _stripe_value(portal, "url")}
+
+
+@app.post("/api/billing/cancel")
+async def cancel_subscription_at_period_end(request: Request):
+    """Stop renewal without ending paid access or creating a refund."""
+    _rate_limit(request, "cancel-subscription", 5, 10 * 60)
+    user = _signed_in_user(request)
+    if not STRIPE_SECRET_KEY:
+        raise HTTPException(503, "Subscription management is not activated yet.")
+    billing = AUTH_STORE.billing_for_user(user.id)
+    if not billing or not billing.stripe_subscription_id:
+        raise HTTPException(404, "No paid subscription was found for this account.")
+
+    try:
+        subscription = await run_in_threadpool(
+            stripe.Subscription.modify,
+            billing.stripe_subscription_id,
+            cancel_at_period_end=True,
+        )
+    except stripe.StripeError as exc:
+        raise HTTPException(502, "The subscription could not be cancelled.") from exc
+
+    returned_customer_id = str(_stripe_value(subscription, "customer", "") or "")
+    if (
+        billing.stripe_customer_id
+        and returned_customer_id
+        and returned_customer_id != billing.stripe_customer_id
+    ):
+        raise HTTPException(502, "Stripe returned an unexpected subscription owner.")
+
+    _sync_stripe_subscription(subscription)
+    period_end = _stripe_value(subscription, "current_period_end")
+    _record_system_event("subscription_cancellation_scheduled")
+    return {
+        "cancel_at_period_end": True,
+        "current_period_end": int(period_end) if period_end is not None else None,
+        "plan": _subscription_plan(subscription),
+    }
 
 
 @app.post("/api/billing/webhook")

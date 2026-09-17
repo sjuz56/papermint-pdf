@@ -276,6 +276,27 @@ html {
   margin-bottom: 10px;
 }
 
+.subscription-status {
+  margin: -7px 0 16px;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+#cancelSubscriptionButton {
+  width: 100%;
+  margin-bottom: 10px;
+}
+
+.price-button.danger {
+  border-color: #f2b8b5;
+  color: #b42318;
+}
+
+.price-button.danger:hover {
+  border-color: #e9847d;
+  background: #fff1f0;
+}
+
 .checkout-dialog {
   max-width: 500px;
 }
