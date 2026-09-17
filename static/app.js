@@ -172,6 +172,7 @@ function addSelectedFiles(files) {
 }
 
 function openTool(tool) {
+  window.PDFaspectAnalytics?.track('tool_open', {tool: tool.id});
   activeTool = tool;
   const localizedTool = i18n?.translateTool(tool) || tool;
   document
@@ -764,6 +765,7 @@ if (form) {
 
     const s = document.getElementById('status');
     const tool = document.getElementById('toolId').value;
+    window.PDFaspectAnalytics?.track('tool_submit', {tool});
     const fd = new FormData(e.target);
 
     // Nativní políčko se po každém výběru vymaže.
