@@ -81,7 +81,14 @@ restarts and do not store raw IP addresses:
 PAPERMINT_USAGE_HASH_SECRET=generate-a-long-random-secret
 PAPERMINT_FREE_DAILY_TASK_LIMIT=2
 PAPERMINT_FREE_UPLOAD_MB=10
+PAPERMINT_ADMIN_EMAILS=pdfaspect@gmail.com
 ```
+
+The private first-party analytics dashboard is available at `/analytics` to a
+signed-in account listed in `PAPERMINT_ADMIN_EMAILS`. It stores aggregate page,
+source, and tool counts. Daily visitor estimates use an opaque HMAC-derived
+identifier; raw IP addresses and user-agent strings are not stored, and daily
+identifiers are deleted after 45 days.
 
 The Docker image starts a small local Redis instance automatically. If `REDIS_URL`
 is provided, it uses that external Redis/Render Key Value instance instead. The
