@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<meta name="robots" content="noindex,nofollow"/>
+<title>Analytics — PDFaspect</title>
+<link rel="icon" href="/static/assets/octopus-logo.png"/>
+<link rel="stylesheet" href="/static/style.css"/>
+<style>
+.analytics-shell{max-width:1100px;margin:0 auto;padding:48px 24px 80px}.analytics-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin:28px 0}.analytics-card{background:#fff;border:1px solid #dbe8f1;border-radius:18px;padding:20px;box-shadow:0 12px 32px rgba(39,72,96,.08)}.analytics-card span{display:block;color:#61778a;font-weight:700}.analytics-card strong{display:block;margin-top:8px;font-size:2rem;color:#413052}.analytics-columns{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}.analytics-list{list-style:none;margin:0;padding:0}.analytics-list li{display:flex;justify-content:space-between;gap:12px;padding:10px 0;border-bottom:1px solid #edf2f6}.analytics-table{width:100%;border-collapse:collapse}.analytics-table th,.analytics-table td{text-align:left;padding:10px;border-bottom:1px solid #edf2f6}.analytics-status a{color:#e35a0a;font-weight:700}@media(max-width:760px){.analytics-grid,.analytics-columns{grid-template-columns:1fr 1fr}}@media(max-width:520px){.analytics-grid,.analytics-columns{grid-template-columns:1fr}}
+</style>
+</head>
+<body class="legal-page">
+<header class="topbar legal-topbar"><a class="brand" href="/">PDF<span>aspect</span></a><a class="ghost" href="/">Back to PDF tools</a></header>
+<main class="analytics-shell">
+  <div class="pill">Private dashboard</div>
+  <h1>PDFaspect analytics</h1>
+  <p id="analyticsStatus" class="analytics-status">Loading analytics…</p>
+  <div id="analyticsContent" class="hidden">
+    <section class="analytics-grid">
+      <article class="analytics-card"><span>Visitors</span><strong data-metric="visitors">0</strong></article>
+      <article class="analytics-card"><span>Page views</span><strong data-metric="pageviews">0</strong></article>
+      <article class="analytics-card"><span>Tool starts</span><strong data-metric="tool_submits">0</strong></article>
+      <article class="analytics-card"><span>Registrations</span><strong data-metric="registrations">0</strong></article>
+      <article class="analytics-card"><span>Checkouts opened</span><strong data-metric="checkouts">0</strong></article>
+      <article class="analytics-card"><span>Subscriptions</span><strong data-metric="subscriptions">0</strong></article>
+    </section>
+    <section class="analytics-columns">
+      <article class="analytics-card"><h2>Traffic sources</h2><ul id="analyticsSources" class="analytics-list"></ul></article>
+      <article class="analytics-card"><h2>Popular tools</h2><ul id="analyticsTools" class="analytics-list"></ul></article>
+      <article class="analytics-card"><h2>Top pages</h2><ul id="analyticsPages" class="analytics-list"></ul></article>
+    </section>
+    <section class="analytics-card" style="margin-top:18px;overflow:auto"><h2>Recent days</h2><table class="analytics-table"><thead><tr><th>Day</th><th>Visitors</th><th>Page views</th></tr></thead><tbody id="analyticsDaily"></tbody></table></section>
+  </div>
+</main>
+<script src="/static/analytics-dashboard.js"></script>
+</body>
+</html>
