@@ -8,6 +8,8 @@ from pathlib import Path
 from typing import List
 from collections import defaultdict, deque
 from html import escape
+from urllib.parse import urlparse
+import hashlib
 import os
 import shutil
 import threading
@@ -38,6 +40,7 @@ from papermint_job_queue import (
 )
 from papermint_extra_engines import OCR_LANGUAGES
 from papermint_auth import AuthError, AuthStore, SESSION_SECONDS
+from papermint_analytics import AnalyticsStore
 from papermint_limits import (
     FREE_UPLOAD_BYTES,
     FREE_UPLOAD_MB,
@@ -71,6 +74,15 @@ AUTH_STORE = AuthStore(
     database_url=os.getenv("DATABASE_URL"),
     sqlite_path=BASE / "data" / "papermint.sqlite3",
 )
+ANALYTICS_STORE = AnalyticsStore(
+    database_url=os.getenv("DATABASE_URL"),
+    sqlite_path=BASE / "data" / "papermint.sqlite3",
+)
+ANALYTICS_ADMIN_EMAILS = {
+    email.strip().lower()
+    for email in os.getenv("PAPERMINT_ADMIN_EMAILS", "pdfaspect@gmail.com").split(",")
+    if email.strip()
+}
 
 STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY", "").strip()
 STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "").strip()
@@ -256,6 +268,11 @@ def privacy():
     return (BASE / "static" / "privacy.html").read_text(encoding="utf-8")
 
 
+@app.get("/analytics", response_class=HTMLResponse)
+def analytics_dashboard():
+    return (BASE / "static" / "analytics-dashboard.html").read_text(encoding="utf-8")
+
+
 @app.get("/robots.txt", response_class=PlainTextResponse)
 def robots():
     return "User-agent: *\nAllow: /\nSitemap: https://pdfaspect.com/sitemap.xml\n"
@@ -265,7 +282,7 @@ def robots():
 def sitemap():
     paths = ["", "terms", "privacy", *(f"tools/{tool_id}" for tool_id, _, _ in TOOLS)]
     urls = "".join(
-        f"<url><loc>https://pdfaspect.com/{path}</loc><lastmod>2026-09-15</lastmod></url>"
+        f"<url><loc>https://pdfaspect.com/{path}</loc><lastmod>2026-09-17</lastmod></url>"
         for path in paths
     )
     return Response(
@@ -291,7 +308,8 @@ def tool_page(tool_id: str):
 <a class="ghost" href="/#tools">All PDF tools</a></header><main class="legal-shell"><div class="legal-hero">
 <div class="pill">Online PDF tool</div><h1>{escape(name)}</h1><p>{summary}</p>
 <a class="primary tool-page-action" href="/?tool={escape(tool_id)}#tools">Open {escape(name)}</a></div></main>
-<footer><span>© 2026 PDFaspect</span><span class="footer-links"><a href="/terms">Terms</a><a href="/privacy">Privacy</a></span></footer></body></html>"""
+<footer><span>© 2026 PDFaspect</span><span class="footer-links"><a href="/terms">Terms</a><a href="/privacy">Privacy</a></span></footer>
+<script src="/static/analytics.js"></script></body></html>"""
 
 
 @app.get("/api/tools")
@@ -315,6 +333,89 @@ class AuthCredentials(BaseModel):
 class CheckoutPlan(BaseModel):
     plan: str
     accepted_terms: bool = False
+
+
+class AnalyticsEvent(BaseModel):
+    event: str
+    path: str = "/"
+    referrer: str = ""
+    tool: str = ""
+
+
+def _analytics_source(referrer: str) -> str:
+    try:
+        hostname = (urlparse(referrer).hostname or "").lower()
+    except ValueError:
+        hostname = ""
+    if not hostname:
+        return "direct"
+    if hostname == "pdfaspect.com" or hostname.endswith(".pdfaspect.com"):
+        return "internal"
+    sources = {
+        "google": ("google.",),
+        "bing": ("bing.com",),
+        "seznam": ("seznam.cz",),
+        "duckduckgo": ("duckduckgo.com",),
+        "yahoo": ("yahoo.",),
+        "facebook": ("facebook.com", "m.me"),
+        "instagram": ("instagram.com",),
+        "tiktok": ("tiktok.com",),
+        "youtube": ("youtube.com", "youtu.be"),
+        "reddit": ("reddit.com",),
+        "x": ("x.com", "twitter.com"),
+        "linkedin": ("linkedin.com",),
+    }
+    for source, fragments in sources.items():
+        if any(fragment in hostname for fragment in fragments):
+            return source
+    return hostname[:80]
+
+
+def _analytics_visitor_hash(request: Request) -> str:
+    day = ANALYTICS_STORE.day()
+    opaque_network_key = anonymous_quota_key(
+        f"{_client_address(request)}|{request.headers.get('user-agent', '')[:300]}"
+    )
+    return hashlib.sha256(f"{day}|{opaque_network_key}".encode("utf-8")).hexdigest()
+
+
+def _record_system_event(event: str, tool_id: str = "") -> None:
+    try:
+        ANALYTICS_STORE.record(event, tool_id=tool_id)
+    except Exception:
+        pass
+
+
+@app.post("/api/analytics/event", status_code=204)
+def record_analytics_event(payload: AnalyticsEvent, request: Request):
+    _rate_limit(request, "analytics", 120, 60)
+    allowed_events = {"page_view", "tool_open", "tool_submit"}
+    if payload.event not in allowed_events:
+        raise HTTPException(400, "Unknown analytics event.")
+    tool_ids = {tool_id for tool_id, _, _ in TOOLS}
+    tool_id = payload.tool.strip().lower() if payload.tool.strip().lower() in tool_ids else ""
+    path = "/" + payload.path.lstrip("/").split("?", 1)[0][:180]
+    try:
+        ANALYTICS_STORE.record(
+            payload.event,
+            visitor_hash=_analytics_visitor_hash(request),
+            path=path,
+            source=_analytics_source(payload.referrer),
+            tool_id=tool_id,
+        )
+    except Exception:
+        return Response(status_code=204)
+    return Response(status_code=204)
+
+
+@app.get("/api/analytics/summary")
+def analytics_summary(request: Request, days: int = 30):
+    user = AUTH_STORE.user_for_session(request.cookies.get(AUTH_COOKIE))
+    if not user:
+        raise HTTPException(401, "Sign in to view analytics.")
+    if user.email.lower() not in ANALYTICS_ADMIN_EMAILS:
+        raise HTTPException(403, "This account cannot view analytics.")
+    return ANALYTICS_STORE.summary(days)
 
 
 def _auth_response(user, token: str, request: Request) -> JSONResponse:
@@ -347,6 +448,7 @@ def register_account(credentials: AuthCredentials, request: Request):
     try:
         user = AUTH_STORE.register(credentials.email, credentials.password)
         token = AUTH_STORE.create_session(user.id)
+        _record_system_event("registration")
     except AuthError as exc:
         raise HTTPException(400, str(exc)) from exc
     return _auth_response(user, token, request)
@@ -515,6 +617,7 @@ async def create_checkout(payload: CheckoutPlan, request: Request):
     checkout_url = _stripe_value(checkout, "url")
     if not checkout_url:
         raise HTTPException(502, "The secure payment page did not return a link.")
+    _record_system_event("checkout_started")
     return {"url": checkout_url}
 
 
@@ -576,6 +679,7 @@ async def stripe_webhook(request: Request):
                     str(subscription_id),
                 )
                 _sync_stripe_subscription(subscription)
+                _record_system_event("subscription_started")
             except stripe.StripeError:
                 # Stripe retries webhook deliveries; do not grant access without
                 # confirmed subscription state.
