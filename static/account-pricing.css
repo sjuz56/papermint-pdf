@@ -389,3 +389,27 @@ html {
     margin-right: 36px;
   }
 }
+
+
+.auth-link-button {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  padding: 10px 0 2px;
+  font: inherit;
+  font-weight: 700;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.auth-link-button:hover {
+  text-decoration-thickness: 2px;
+}
+
+#passwordResetPanel .field {
+  margin-top: 14px;
+}
+
+#passwordResetPanel .form-status {
+  margin-top: 12px;
+}
