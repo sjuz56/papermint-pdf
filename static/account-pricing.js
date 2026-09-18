@@ -138,6 +138,7 @@ function renderAccount() {
       'hidden',
       !pro || !currentAccount.billing_managed || currentAccount.subscription_cancel_at_period_end
     );
+    document.getElementById('accountUpgradePanel')?.classList.toggle('hidden', pro);
   } else {
     signedOut.classList.remove('hidden');
     signedIn.classList.add('hidden');
