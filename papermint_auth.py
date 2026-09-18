@@ -504,6 +504,20 @@ class AuthStore:
             row = cursor.fetchone()
         return AuthUser(id=row[0], email=row[1]) if row else None
 
+    def user_for_id(self, user_id: str) -> AuthUser | None:
+        """Return a user by internal ID without exposing authentication data."""
+        if not user_id:
+            return None
+        placeholder = self._placeholder
+        with self._connect() as connection:
+            cursor = connection.cursor()
+            cursor.execute(
+                f"SELECT id, email FROM users WHERE id = {placeholder}",
+                (user_id,),
+            )
+            row = cursor.fetchone()
+        return AuthUser(id=row[0], email=row[1]) if row else None
+
     def delete_session(self, token: str | None) -> None:
         if not token:
             return
