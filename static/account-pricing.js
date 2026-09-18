@@ -105,6 +105,14 @@ function renderAccount() {
     const planBadge = document.getElementById('accountPlanBadge');
     planBadge.textContent = pro ? 'PRO' : 'FREE';
     planBadge.classList.toggle('pro', pro);
+    const verificationStatus = document.getElementById('emailVerificationStatus');
+    const resendVerificationButton = document.getElementById('resendVerificationButton');
+    const emailVerified = currentAccount.email_verified === true;
+    if (verificationStatus) {
+      verificationStatus.textContent = emailVerified ? 'Email verified ✓' : 'Email not verified yet';
+      verificationStatus.classList.remove('hidden');
+    }
+    resendVerificationButton?.classList.toggle('hidden', emailVerified);
     const periodEnd = currentAccount.subscription_period_end;
     const subscriptionStatus = document.getElementById('subscriptionStatusText');
     if (subscriptionStatus) {
@@ -346,6 +354,21 @@ authForm?.addEventListener('submit', async event => {
     authStatus.classList.add('error');
   } finally {
     submitButton.disabled = false;
+  }
+});
+
+document.getElementById('resendVerificationButton')?.addEventListener('click', async event => {
+  const button = event.currentTarget;
+  button.disabled = true;
+  try {
+    const response = await fetch('/api/auth/verify-email/resend', {method: 'POST'});
+    const data = await readJson(response);
+    if (!response.ok) throw new Error(data.detail || 'Could not send verification email.');
+    showBillingNotice(data.message || 'Verification email sent.');
+  } catch (error) {
+    showBillingNotice(error.message);
+  } finally {
+    button.disabled = false;
   }
 });
 
