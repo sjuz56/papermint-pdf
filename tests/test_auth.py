@@ -49,6 +49,33 @@ class AuthStoreTests(unittest.TestCase):
         self.assertTrue(verify_password("strong-password", encoded))
         self.assertFalse(verify_password("wrong-password", encoded))
 
+    def test_password_reset_is_single_use_and_revokes_sessions(self):
+        user = self.store.register("reset@example.com", "strong-password")
+        session = self.store.create_session(user.id)
+        token = self.store.create_password_reset("reset@example.com")
+        self.assertIsNotNone(token)
+
+        self.store.reset_password(token, "new-strong-password")
+        self.assertEqual(
+            self.store.authenticate("reset@example.com", "new-strong-password").id,
+            user.id,
+        )
+        self.assertIsNone(self.store.user_for_session(session))
+        with self.assertRaises(AuthError):
+            self.store.reset_password(token, "another-password")
+
+    def test_email_verification_is_single_use(self):
+        user = self.store.register("verify@example.com", "strong-password")
+        self.assertFalse(self.store.email_is_verified(user.id))
+
+        token = self.store.create_email_verification(user.id)
+        verified = self.store.verify_email(token)
+        self.assertEqual(verified.email, user.email)
+        self.assertTrue(self.store.email_is_verified(user.id))
+
+        with self.assertRaises(AuthError):
+            self.store.verify_email(token)
+
     def test_subscription_and_ai_usage_limits(self):
         user = self.store.register("pro@example.com", "strong-password")
         self.assertEqual(self.store.plan_for_user(user), "free")

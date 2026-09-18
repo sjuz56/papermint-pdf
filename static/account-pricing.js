@@ -9,6 +9,11 @@ const authForm = document.getElementById('authForm');
 const authStatus = document.getElementById('authStatus');
 const authPassword = document.getElementById('authPassword');
 const authPasswordToggle = document.getElementById('authPasswordToggle');
+const authMainPanel = document.getElementById('authMainPanel');
+const passwordResetPanel = document.getElementById('passwordResetPanel');
+const passwordResetStatus = document.getElementById('passwordResetStatus');
+const passwordResetRequestForm = document.getElementById('passwordResetRequestForm');
+const passwordResetConfirmForm = document.getElementById('passwordResetConfirmForm');
 const checkoutModal = document.getElementById('checkoutModal');
 const checkoutConsent = document.getElementById('checkoutConsent');
 const checkoutContinue = document.getElementById('checkoutContinue');
@@ -23,6 +28,43 @@ function setPasswordVisibility(visible) {
     'aria-label',
     accountT(visible ? 'auth.hidePassword' : 'auth.showPassword')
   );
+}
+
+function setPasswordResetMode(confirming = false) {
+  authMainPanel?.classList.add('hidden');
+  passwordResetPanel?.classList.remove('hidden');
+  passwordResetRequestForm?.classList.toggle('hidden', confirming);
+  passwordResetConfirmForm?.classList.toggle('hidden', !confirming);
+  const title = document.getElementById('passwordResetTitle');
+  const subtitle = document.getElementById('passwordResetSubtitle');
+  if (title) title.textContent = confirming ? 'Choose a new password' : 'Reset password';
+  if (subtitle) {
+    subtitle.textContent = confirming
+      ? 'Enter a new password for your PDFaspect account.'
+      : 'Enter your email and we’ll send you a secure reset link.';
+  }
+  if (passwordResetStatus) {
+    passwordResetStatus.textContent = '';
+    passwordResetStatus.classList.remove('error');
+  }
+  window.setTimeout(() => {
+    const target = confirming
+      ? document.getElementById('passwordResetNewPassword')
+      : document.getElementById('passwordResetEmail');
+    target?.focus();
+  }, 0);
+}
+
+function leavePasswordResetMode() {
+  passwordResetPanel?.classList.add('hidden');
+  authMainPanel?.classList.remove('hidden');
+  passwordResetRequestForm?.reset();
+  passwordResetConfirmForm?.reset();
+  if (passwordResetStatus) {
+    passwordResetStatus.textContent = '';
+    passwordResetStatus.classList.remove('error');
+  }
+  setAuthMode('login');
 }
 
 function setAuthMode(mode) {
@@ -185,7 +227,75 @@ authPasswordToggle?.addEventListener('click', () => {
 });
 
 document.querySelectorAll('[data-auth-mode]').forEach(button => {
-  button.addEventListener('click', () => setAuthMode(button.dataset.authMode));
+  button.addEventListener('click', () => {
+    passwordResetPanel?.classList.add('hidden');
+    authMainPanel?.classList.remove('hidden');
+    setAuthMode(button.dataset.authMode);
+  });
+});
+
+document.getElementById('forgotPasswordButton')?.addEventListener('click', () => {
+  const email = document.getElementById('authEmail')?.value || '';
+  const resetEmail = document.getElementById('passwordResetEmail');
+  if (resetEmail) resetEmail.value = email;
+  setPasswordResetMode(false);
+});
+
+document.getElementById('passwordResetBack')?.addEventListener('click', leavePasswordResetMode);
+
+passwordResetRequestForm?.addEventListener('submit', async event => {
+  event.preventDefault();
+  const button = document.getElementById('passwordResetRequestSubmit');
+  button.disabled = true;
+  passwordResetStatus.classList.remove('error');
+  passwordResetStatus.textContent = 'Sending reset link…';
+
+  try {
+    const fields = new FormData(passwordResetRequestForm);
+    const response = await fetch('/api/auth/password-reset/request', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({email: fields.get('email')})
+    });
+    const data = await readJson(response);
+    if (!response.ok) throw new Error(data.detail || 'Could not send reset link.');
+    passwordResetStatus.textContent =
+      data.message || 'If an account exists for that email, a reset link has been sent.';
+  } catch (error) {
+    passwordResetStatus.textContent = error.message;
+    passwordResetStatus.classList.add('error');
+  } finally {
+    button.disabled = false;
+  }
+});
+
+passwordResetConfirmForm?.addEventListener('submit', async event => {
+  event.preventDefault();
+  const token = new URLSearchParams(window.location.search).get('reset_token');
+  const button = document.getElementById('passwordResetConfirmSubmit');
+  button.disabled = true;
+  passwordResetStatus.classList.remove('error');
+  passwordResetStatus.textContent = 'Changing password…';
+
+  try {
+    if (!token) throw new Error('This password reset link is invalid or has expired.');
+    const fields = new FormData(passwordResetConfirmForm);
+    const response = await fetch('/api/auth/password-reset/confirm', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({token, password: fields.get('password')})
+    });
+    const data = await readJson(response);
+    if (!response.ok) throw new Error(data.detail || 'Could not change password.');
+    passwordResetStatus.textContent = data.message || 'Password changed. You can sign in now.';
+    window.history.replaceState({}, '', window.location.pathname + '#account');
+    window.setTimeout(leavePasswordResetMode, 1200);
+  } catch (error) {
+    passwordResetStatus.textContent = error.message;
+    passwordResetStatus.classList.add('error');
+  } finally {
+    button.disabled = false;
+  }
 });
 
 authForm?.addEventListener('submit', async event => {
@@ -343,6 +453,12 @@ document.addEventListener('keydown', event => {
 
 setAuthMode('login');
 loadAccount();
+
+const passwordResetToken = new URLSearchParams(window.location.search).get('reset_token');
+if (passwordResetToken) {
+  openAuth();
+  setPasswordResetMode(true);
+}
 
 window.addEventListener('papermint:languagechange', () => {
   renderAccount();

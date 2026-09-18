@@ -8,10 +8,12 @@ from pathlib import Path
 from typing import List
 from collections import defaultdict, deque
 from html import escape
+from email.message import EmailMessage
 from urllib.parse import urlparse
 import hashlib
 import os
 import shutil
+import smtplib
 import threading
 import time
 import uuid
@@ -330,6 +332,15 @@ class AuthCredentials(BaseModel):
     password: str
 
 
+class PasswordResetRequest(BaseModel):
+    email: str
+
+
+class PasswordResetConfirm(BaseModel):
+    token: str
+    password: str
+
+
 class CheckoutPlan(BaseModel):
     plan: str
     accepted_terms: bool = False
@@ -426,6 +437,7 @@ def _auth_response(user, token: str, request: Request) -> JSONResponse:
             "email": user.email,
             "plan": AUTH_STORE.plan_for_user(user),
             "billing_managed": bool(billing and billing.stripe_customer_id),
+            "email_verified": AUTH_STORE.email_is_verified(user.id),
         }
     )
     forwarded_proto = request.headers.get("x-forwarded-proto", "")
@@ -442,6 +454,104 @@ def _auth_response(user, token: str, request: Request) -> JSONResponse:
     return response
 
 
+def _password_reset_email_configured() -> bool:
+    return all(
+        os.getenv(name, "").strip()
+        for name in (
+            "PAPERMINT_SMTP_HOST",
+            "PAPERMINT_SMTP_USER",
+            "PAPERMINT_SMTP_PASSWORD",
+            "PAPERMINT_SMTP_FROM",
+        )
+    )
+
+
+def _send_email_message(recipient: str, subject: str, body: str) -> None:
+    host = os.getenv("PAPERMINT_SMTP_HOST", "").strip()
+    port = int(os.getenv("PAPERMINT_SMTP_PORT", "587"))
+    username = os.getenv("PAPERMINT_SMTP_USER", "").strip()
+    password = os.getenv("PAPERMINT_SMTP_PASSWORD", "").strip()
+    sender = os.getenv("PAPERMINT_SMTP_FROM", "").strip()
+    use_ssl = os.getenv("PAPERMINT_SMTP_SSL", "").strip().lower() in {"1", "true", "yes"}
+
+    message = EmailMessage()
+    message["Subject"] = subject
+    message["From"] = sender
+    message["To"] = recipient
+    message.set_content(body)
+
+    if use_ssl:
+        with smtplib.SMTP_SSL(host, port, timeout=15) as smtp:
+            smtp.login(username, password)
+            smtp.send_message(message)
+    else:
+        with smtplib.SMTP(host, port, timeout=15) as smtp:
+            smtp.ehlo()
+            smtp.starttls()
+            smtp.ehlo()
+            smtp.login(username, password)
+            smtp.send_message(message)
+
+
+def _send_password_reset_email(recipient: str, reset_url: str) -> None:
+    _send_email_message(
+        recipient,
+        "Reset your PDFaspect password",
+        "We received a request to reset your PDFaspect password.\n\n"
+        f"Open this link within 60 minutes:\n{reset_url}\n\n"
+        "If you did not request a password reset, you can ignore this email.",
+    )
+
+
+def _send_verification_email(recipient: str, verify_url: str) -> None:
+    _send_email_message(
+        recipient,
+        "Verify your PDFaspect email",
+        "Welcome to PDFaspect.\n\n"
+        "Please verify that this email address belongs to you by opening this link:\n"
+        f"{verify_url}\n\n"
+        "This link expires in 24 hours. If you did not create a PDFaspect account, "
+        "you can ignore this email.",
+    )
+
+
+@app.post("/api/auth/password-reset/request")
+def request_password_reset(payload: PasswordResetRequest, request: Request):
+    _rate_limit(request, "password-reset-request", 5, 60 * 60)
+    if not _password_reset_email_configured():
+        raise HTTPException(503, "Password reset email is not configured yet.")
+
+    try:
+        token = AUTH_STORE.create_password_reset(payload.email, ttl_seconds=60 * 60)
+    except AuthError:
+        token = None
+
+    if token:
+        reset_url = (
+            f"{_public_url(request)}/?reset_token={token}#account"
+        )
+        try:
+            _send_password_reset_email(payload.email.strip().lower(), reset_url)
+        except Exception:
+            # Never disclose whether the account exists. Operators can inspect logs.
+            print("Password reset email delivery failed.", flush=True)
+
+    return {
+        "ok": True,
+        "message": "If an account exists for that email, a reset link has been sent.",
+    }
+
+
+@app.post("/api/auth/password-reset/confirm")
+def confirm_password_reset(payload: PasswordResetConfirm, request: Request):
+    _rate_limit(request, "password-reset-confirm", 10, 60 * 60)
+    try:
+        AUTH_STORE.reset_password(payload.token, payload.password)
+    except AuthError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"ok": True, "message": "Your password has been changed. You can sign in now."}
+
+
 @app.post("/api/auth/register")
 def register_account(credentials: AuthCredentials, request: Request):
     _rate_limit(request, "register", 5, 15 * 60)
@@ -451,7 +561,44 @@ def register_account(credentials: AuthCredentials, request: Request):
         _record_system_event("registration")
     except AuthError as exc:
         raise HTTPException(400, str(exc)) from exc
+
+    if _password_reset_email_configured():
+        try:
+            verify_token = AUTH_STORE.create_email_verification(
+                user.id, ttl_seconds=24 * 60 * 60
+            )
+            verify_url = f"{_public_url(request)}/api/auth/verify-email?token={verify_token}"
+            _send_verification_email(user.email, verify_url)
+        except Exception:
+            print("Email verification delivery failed.", flush=True)
+
     return _auth_response(user, token, request)
+
+
+@app.get("/api/auth/verify-email", response_class=HTMLResponse)
+def verify_email(token: str):
+    try:
+        user = AUTH_STORE.verify_email(token)
+    except AuthError as exc:
+        return HTMLResponse(
+            "<!doctype html><html><head><meta charset='utf-8'>"
+            "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+            "<title>Email verification</title></head><body>"
+            "<h1>Verification link is invalid or expired</h1>"
+            "<p>Please return to PDFaspect and request a new verification email.</p>"
+            "<p><a href='/#account'>Back to PDFaspect</a></p>"
+            "</body></html>",
+            status_code=400,
+        )
+    return HTMLResponse(
+        "<!doctype html><html><head><meta charset='utf-8'>"
+        "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+        "<title>Email verified</title></head><body>"
+        "<h1>Email verified</h1>"
+        f"<p>{escape(user.email)} has been verified successfully.</p>"
+        "<p><a href='/#account'>Continue to PDFaspect</a></p>"
+        "</body></html>"
+    )
 
 
 @app.post("/api/auth/login")
@@ -476,6 +623,7 @@ def current_account(request: Request):
         "email": user.email,
         "plan": AUTH_STORE.plan_for_user(user),
         "billing_managed": bool(billing and billing.stripe_customer_id),
+        "email_verified": AUTH_STORE.email_is_verified(user.id),
     }
 
 
