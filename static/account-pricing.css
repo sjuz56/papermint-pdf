@@ -413,3 +413,105 @@ html {
 #passwordResetPanel .form-status {
   margin-top: 12px;
 }
+
+
+.account-upgrade-panel {
+  margin: 8px 0 18px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: linear-gradient(155deg, #ffffff 55%, #f1f9ff);
+  text-align: left;
+}
+
+.account-upgrade-heading {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 14px;
+}
+
+.account-upgrade-heading strong {
+  color: var(--navy);
+  font-size: 17px;
+}
+
+.account-upgrade-heading span {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.account-upgrade-options {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.account-upgrade-card {
+  position: relative;
+  display: grid;
+  gap: 5px;
+  padding: 15px 13px;
+  border: 1px solid #c9ddeb;
+  border-radius: 15px;
+  background: #fff;
+  color: var(--navy);
+  text-align: left;
+  cursor: pointer;
+}
+
+.account-upgrade-card:hover {
+  border-color: var(--blue);
+  background: var(--blue-pale);
+}
+
+.account-upgrade-card.featured {
+  border: 2px solid var(--blue);
+  background: #f8fcff;
+}
+
+.account-upgrade-name {
+  font-size: 13px;
+  font-weight: 850;
+}
+
+.account-upgrade-price {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.account-upgrade-price strong {
+  color: var(--navy);
+  font-size: 23px;
+  letter-spacing: -.03em;
+}
+
+.account-upgrade-action {
+  margin-top: 4px;
+  color: var(--blue-dark);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.account-upgrade-note {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.account-upgrade-save {
+  position: absolute;
+  top: -9px;
+  right: 8px;
+  padding: 4px 7px;
+  border-radius: 999px;
+  background: var(--orange-pale);
+  color: var(--orange-dark);
+  font-size: 9px;
+  font-weight: 900;
+}
+
+@media (max-width: 520px) {
+  .account-upgrade-options {
+    grid-template-columns: 1fr;
+  }
+}
