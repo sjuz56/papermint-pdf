@@ -180,6 +180,22 @@ class AuthStore:
             )
             cursor.execute(
                 """
+                CREATE TABLE IF NOT EXISTS password_reset_tokens (
+                    token_hash TEXT PRIMARY KEY,
+                    user_id TEXT NOT NULL,
+                    created_at BIGINT NOT NULL,
+                    expires_at BIGINT NOT NULL,
+                    used_at BIGINT,
+                    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+                )
+                """
+            )
+            cursor.execute(
+                "CREATE INDEX IF NOT EXISTS password_reset_expires_idx "
+                "ON password_reset_tokens(expires_at)"
+            )
+            cursor.execute(
+                """
                 CREATE TABLE IF NOT EXISTS subscriptions (
                     user_id TEXT PRIMARY KEY,
                     plan TEXT NOT NULL,
@@ -280,6 +296,79 @@ class AuthStore:
         if not row or not verify_password(password_value, row[2]):
             raise AuthError("Incorrect email or password.")
         return AuthUser(id=row[0], email=row[1])
+
+    def create_password_reset(self, email_value: str, ttl_seconds: int = 3600) -> str | None:
+        """Create a single-use reset token for an existing account.
+
+        Returns None when the email does not exist so callers can keep responses
+        enumeration-safe. Only a SHA-256 hash is stored in the database.
+        """
+        email = normalize_email(email_value)
+        placeholder = self._placeholder
+        now = int(time.time())
+        with self._connect() as connection:
+            cursor = connection.cursor()
+            cursor.execute(
+                f"SELECT id FROM users WHERE email = {placeholder}",
+                (email,),
+            )
+            row = cursor.fetchone()
+            if not row:
+                return None
+            user_id = row[0]
+            cursor.execute(
+                f"DELETE FROM password_reset_tokens "
+                f"WHERE user_id = {placeholder} OR expires_at <= {placeholder}",
+                (user_id, now),
+            )
+            token = secrets.token_urlsafe(32)
+            token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+            cursor.execute(
+                f"INSERT INTO password_reset_tokens "
+                f"(token_hash, user_id, created_at, expires_at, used_at) "
+                f"VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, NULL)",
+                (token_hash, user_id, now, now + max(300, int(ttl_seconds))),
+            )
+        return token
+
+    def reset_password(self, token: str, new_password: str) -> None:
+        """Consume a valid reset token, replace the password, and sign out sessions."""
+        if not token:
+            raise AuthError("This password reset link is invalid or has expired.")
+        password_hash = hash_password(new_password)
+        token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+        placeholder = self._placeholder
+        now = int(time.time())
+
+        with self._connect() as connection:
+            cursor = connection.cursor()
+            cursor.execute(
+                f"SELECT user_id, expires_at, used_at FROM password_reset_tokens "
+                f"WHERE token_hash = {placeholder}",
+                (token_hash,),
+            )
+            row = cursor.fetchone()
+            if not row or row[2] is not None or int(row[1]) <= now:
+                raise AuthError("This password reset link is invalid or has expired.")
+            user_id = row[0]
+            cursor.execute(
+                f"UPDATE users SET password_hash = {placeholder} WHERE id = {placeholder}",
+                (password_hash, user_id),
+            )
+            cursor.execute(
+                f"UPDATE password_reset_tokens SET used_at = {placeholder} "
+                f"WHERE token_hash = {placeholder}",
+                (now, token_hash),
+            )
+            cursor.execute(
+                f"DELETE FROM sessions WHERE user_id = {placeholder}",
+                (user_id,),
+            )
+            cursor.execute(
+                f"DELETE FROM password_reset_tokens "
+                f"WHERE user_id = {placeholder} AND token_hash <> {placeholder}",
+                (user_id, token_hash),
+            )
 
     def create_session(self, user_id: str) -> str:
         token = secrets.token_urlsafe(32)
