@@ -7,13 +7,14 @@ from starlette.concurrency import run_in_threadpool
 from pathlib import Path
 from typing import List
 from collections import defaultdict, deque
-from html import escape
+from html import escape, unescape
 from urllib.parse import urlparse
 from urllib.request import Request as UrlRequest, urlopen
 from urllib.error import HTTPError, URLError
 import hashlib
 import json
 import os
+import re
 import shutil
 import threading
 import time
@@ -532,6 +533,72 @@ def _send_verification_email(recipient: str, verify_url: str) -> None:
     )
 
 
+def _subscription_terms_text() -> str:
+    """Return the current Terms page as readable plain text for durable email confirmation."""
+    try:
+        html_text = (BASE / "static" / "terms.html").read_text(encoding="utf-8")
+        match = re.search(
+            r'<article class="legal-content">(.*?)</article>',
+            html_text,
+            flags=re.IGNORECASE | re.DOTALL,
+        )
+        body = match.group(1) if match else html_text
+        body = re.sub(r"<br\s*/?>", "\n", body, flags=re.IGNORECASE)
+        body = re.sub(r"</(?:p|li|h1|h2|h3|section|ol|ul|div)>", "\n", body, flags=re.IGNORECASE)
+        body = re.sub(r"<[^>]+>", "", body)
+        body = unescape(body)
+        body = re.sub(r"[ \t]+", " ", body)
+        body = re.sub(r"\n\s*\n+", "\n\n", body)
+        return body.strip()
+    except Exception:
+        return "Current Terms & Conditions: https://pdfaspect.com/terms"
+
+
+def _format_checkout_amount(amount_total, currency: str) -> str:
+    if amount_total is None:
+        return "See your Stripe receipt for the final charged amount."
+    try:
+        amount = int(amount_total) / 100
+    except (TypeError, ValueError):
+        return "See your Stripe receipt for the final charged amount."
+    code = (currency or "eur").upper()
+    symbol = "€" if code == "EUR" else f"{code} "
+    return f"{symbol}{amount:.2f}"
+
+
+def _send_subscription_confirmation_email(
+    recipient: str,
+    *,
+    plan: str,
+    amount_total=None,
+    currency: str = "eur",
+    terms_version: str = "2026-09-15",
+) -> None:
+    plan_label = "Monthly — €7 / month" if plan == "monthly" else "Yearly — €60 / year"
+    amount_label = _format_checkout_amount(amount_total, currency)
+    terms_text = _subscription_terms_text()
+    _safe_send_email(
+        recipient,
+        "Your PDFaspect PRO subscription is active",
+        "Thank you for subscribing to PDFaspect PRO.\n\n"
+        f"Plan: {plan_label}\n"
+        f"Amount charged today: {amount_label}\n"
+        "Renewal: automatic for the same billing period until you cancel renewal.\n"
+        "You can manage or cancel renewal from your PDFaspect account.\n\n"
+        "CONSENT CONFIRMATION\n"
+        "During checkout you actively accepted the Terms & Conditions, requested "
+        "immediate access to the paid digital service after payment, and acknowledged "
+        "the withdrawal information shown at checkout. This email confirms that choice; "
+        "it does not ask you to consent again.\n\n"
+        f"Terms version accepted: {terms_version}\n"
+        "Online copy: https://pdfaspect.com/terms\n\n"
+        "TERMS & CONDITIONS IN FORCE AT PURCHASE\n"
+        "---------------------------------------\n"
+        f"{terms_text}\n\n"
+        "Support: pdfaspect@gmail.com",
+    )
+
+
 @app.post("/api/auth/password-reset/request")
 def request_password_reset(payload: PasswordResetRequest, request: Request):
     _rate_limit(request, "password-reset-request", 5, 60 * 60)
@@ -871,6 +938,19 @@ async def stripe_webhook(request: Request):
                 # Stripe retries webhook deliveries; do not grant access without
                 # confirmed subscription state.
                 raise HTTPException(502, "Subscription state could not be confirmed.")
+
+        if user_id:
+            user = AUTH_STORE.user_for_id(str(user_id))
+            if user:
+                plan = metadata.get("plan") if metadata.get("plan") in {"monthly", "yearly"} else "monthly"
+                terms_version = str(metadata.get("terms_version") or "2026-09-15")
+                _send_subscription_confirmation_email(
+                    user.email,
+                    plan=plan,
+                    amount_total=_stripe_value(event_data, "amount_total"),
+                    currency=str(_stripe_value(event_data, "currency", "eur") or "eur"),
+                    terms_version=terms_version,
+                )
     elif event_type in {
         "customer.subscription.created",
         "customer.subscription.updated",
