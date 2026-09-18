@@ -36,5 +36,6 @@ jobs:
           PAPERMINT_REQUIRE_LIBREOFFICE: "1"
           PAPERMINT_SOFFICE: /usr/bin/libreoffice
           REDIS_URL: redis://127.0.0.1:6379/0
+          PYTHONPATH: .
         run: |
           pytest -q             tests/test_extra_engines.py             tests/test_remaining_api.py             tests/test_queue_dispatch.py             tests/test_free_limits.py
