@@ -160,10 +160,22 @@ class AuthStore:
                     id TEXT PRIMARY KEY,
                     email TEXT NOT NULL UNIQUE,
                     password_hash TEXT NOT NULL,
-                    created_at BIGINT NOT NULL
+                    created_at BIGINT NOT NULL,
+                    email_verified_at BIGINT
                 )
                 """
             )
+            if self.postgres:
+                cursor.execute(
+                    "ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified_at BIGINT"
+                )
+            else:
+                cursor.execute("PRAGMA table_info(users)")
+                user_columns = {row[1] for row in cursor.fetchall()}
+                if "email_verified_at" not in user_columns:
+                    cursor.execute(
+                        "ALTER TABLE users ADD COLUMN email_verified_at BIGINT"
+                    )
             cursor.execute(
                 """
                 CREATE TABLE IF NOT EXISTS sessions (
@@ -193,6 +205,22 @@ class AuthStore:
             cursor.execute(
                 "CREATE INDEX IF NOT EXISTS password_reset_expires_idx "
                 "ON password_reset_tokens(expires_at)"
+            )
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS email_verification_tokens (
+                    token_hash TEXT PRIMARY KEY,
+                    user_id TEXT NOT NULL,
+                    created_at BIGINT NOT NULL,
+                    expires_at BIGINT NOT NULL,
+                    used_at BIGINT,
+                    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+                )
+                """
+            )
+            cursor.execute(
+                "CREATE INDEX IF NOT EXISTS email_verification_expires_idx "
+                "ON email_verification_tokens(expires_at)"
             )
             cursor.execute(
                 """
@@ -281,6 +309,74 @@ class AuthStore:
             raise
 
         return user
+
+    def create_email_verification(self, user_id: str, ttl_seconds: int = 24 * 60 * 60) -> str:
+        """Create a single-use email-verification token for a user."""
+        placeholder = self._placeholder
+        now = int(time.time())
+        token = secrets.token_urlsafe(32)
+        token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+        with self._connect() as connection:
+            cursor = connection.cursor()
+            cursor.execute(
+                f"DELETE FROM email_verification_tokens "
+                f"WHERE user_id = {placeholder} OR expires_at <= {placeholder}",
+                (user_id, now),
+            )
+            cursor.execute(
+                f"INSERT INTO email_verification_tokens "
+                f"(token_hash, user_id, created_at, expires_at, used_at) "
+                f"VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, NULL)",
+                (token_hash, user_id, now, now + max(300, int(ttl_seconds))),
+            )
+        return token
+
+    def verify_email(self, token: str) -> AuthUser:
+        """Consume an email-verification token and mark the address verified."""
+        if not token:
+            raise AuthError("This email verification link is invalid or has expired.")
+        token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+        placeholder = self._placeholder
+        now = int(time.time())
+        with self._connect() as connection:
+            cursor = connection.cursor()
+            cursor.execute(
+                f"SELECT t.user_id, t.expires_at, t.used_at, u.email "
+                f"FROM email_verification_tokens t "
+                f"JOIN users u ON u.id = t.user_id "
+                f"WHERE t.token_hash = {placeholder}",
+                (token_hash,),
+            )
+            row = cursor.fetchone()
+            if not row or row[2] is not None or int(row[1]) <= now:
+                raise AuthError("This email verification link is invalid or has expired.")
+            user_id, _, _, email = row
+            cursor.execute(
+                f"UPDATE users SET email_verified_at = {placeholder} WHERE id = {placeholder}",
+                (now, user_id),
+            )
+            cursor.execute(
+                f"UPDATE email_verification_tokens SET used_at = {placeholder} "
+                f"WHERE token_hash = {placeholder}",
+                (now, token_hash),
+            )
+            cursor.execute(
+                f"DELETE FROM email_verification_tokens "
+                f"WHERE user_id = {placeholder} AND token_hash <> {placeholder}",
+                (user_id, token_hash),
+            )
+        return AuthUser(id=user_id, email=email)
+
+    def email_is_verified(self, user_id: str) -> bool:
+        placeholder = self._placeholder
+        with self._connect() as connection:
+            cursor = connection.cursor()
+            cursor.execute(
+                f"SELECT email_verified_at FROM users WHERE id = {placeholder}",
+                (user_id,),
+            )
+            row = cursor.fetchone()
+        return bool(row and row[0] is not None)
 
     def authenticate(self, email_value: str, password_value: str) -> AuthUser:
         email = normalize_email(email_value)
