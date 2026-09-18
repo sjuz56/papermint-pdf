@@ -187,6 +187,28 @@
       <p id="emailVerificationStatus" class="subscription-status hidden"></p>
       <button class="price-button hidden" id="resendVerificationButton" type="button">Resend verification email</button>
       <p id="subscriptionStatusText" class="subscription-status hidden"></p>
+
+      <div id="accountUpgradePanel" class="account-upgrade-panel hidden">
+        <div class="account-upgrade-heading">
+          <strong>Upgrade to PRO</strong>
+          <span>Unlock all tools, larger files and Ask Octo AI.</span>
+        </div>
+        <div class="account-upgrade-options">
+          <button class="account-upgrade-card" type="button" data-plan="monthly">
+            <span class="account-upgrade-name">Monthly</span>
+            <span class="account-upgrade-price"><strong>€7</strong> / month</span>
+            <span class="account-upgrade-action">Choose monthly</span>
+          </button>
+          <button class="account-upgrade-card featured" type="button" data-plan="yearly">
+            <span class="account-upgrade-save">Best value</span>
+            <span class="account-upgrade-name">Yearly</span>
+            <span class="account-upgrade-price"><strong>€60</strong> / year</span>
+            <span class="account-upgrade-note">€5 / month</span>
+            <span class="account-upgrade-action">Choose yearly</span>
+          </button>
+        </div>
+      </div>
+
       <button class="primary full hidden" id="manageSubscriptionButton" type="button" data-i18n="billing.manage">Manage subscription</button>
       <button class="price-button danger hidden" id="cancelSubscriptionButton" type="button" data-i18n="billing.cancelRenewal">Cancel renewal</button>
       <button class="price-button" id="logoutButton" type="button" data-i18n="auth.signOut">Sign out</button>
@@ -217,6 +239,6 @@
 <script src="/static/analytics.js"></script>
 <script src="/static/i18n.js?v=20260916-2"></script>
 <script src="/static/app.js"></script>
-<script src="/static/account-pricing.js?v=20260918-2"></script>
+<script src="/static/account-pricing.js?v=20260918-3"></script>
 </body>
 </html>
