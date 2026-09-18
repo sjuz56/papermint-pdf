@@ -8,12 +8,13 @@ from pathlib import Path
 from typing import List
 from collections import defaultdict, deque
 from html import escape
-from email.message import EmailMessage
 from urllib.parse import urlparse
+from urllib.request import Request as UrlRequest, urlopen
+from urllib.error import HTTPError, URLError
 import hashlib
+import json
 import os
 import shutil
-import smtplib
 import threading
 import time
 import uuid
@@ -429,7 +430,7 @@ def analytics_summary(request: Request, days: int = 30):
     return ANALYTICS_STORE.summary(days)
 
 
-def _auth_response(user, token: str, request: Request) -> JSONResponse:
+def _auth_response(user, token: str, request: Request, background=None) -> JSONResponse:
     billing = AUTH_STORE.billing_for_user(user.id)
     response = JSONResponse(
         {
@@ -438,7 +439,8 @@ def _auth_response(user, token: str, request: Request) -> JSONResponse:
             "plan": AUTH_STORE.plan_for_user(user),
             "billing_managed": bool(billing and billing.stripe_customer_id),
             "email_verified": AUTH_STORE.email_is_verified(user.id),
-        }
+        },
+        background=background,
     )
     forwarded_proto = request.headers.get("x-forwarded-proto", "")
     secure = request.url.scheme == "https" or forwarded_proto.split(",")[0].strip() == "https"
@@ -455,46 +457,61 @@ def _auth_response(user, token: str, request: Request) -> JSONResponse:
 
 
 def _password_reset_email_configured() -> bool:
-    return all(
-        os.getenv(name, "").strip()
-        for name in (
-            "PAPERMINT_SMTP_HOST",
-            "PAPERMINT_SMTP_USER",
-            "PAPERMINT_SMTP_PASSWORD",
-            "PAPERMINT_SMTP_FROM",
-        )
+    api_key = (
+        os.getenv("RESEND_API_KEY", "").strip()
+        or os.getenv("PAPERMINT_SMTP_PASSWORD", "").strip()
     )
+    sender = os.getenv("PAPERMINT_SMTP_FROM", "").strip()
+    return bool(api_key and sender)
 
 
 def _send_email_message(recipient: str, subject: str, body: str) -> None:
-    host = os.getenv("PAPERMINT_SMTP_HOST", "").strip()
-    port = int(os.getenv("PAPERMINT_SMTP_PORT", "587"))
-    username = os.getenv("PAPERMINT_SMTP_USER", "").strip()
-    password = os.getenv("PAPERMINT_SMTP_PASSWORD", "").strip()
+    api_key = (
+        os.getenv("RESEND_API_KEY", "").strip()
+        or os.getenv("PAPERMINT_SMTP_PASSWORD", "").strip()
+    )
     sender = os.getenv("PAPERMINT_SMTP_FROM", "").strip()
-    use_ssl = os.getenv("PAPERMINT_SMTP_SSL", "").strip().lower() in {"1", "true", "yes"}
+    if not api_key or not sender:
+        raise RuntimeError("Transactional email is not configured.")
 
-    message = EmailMessage()
-    message["Subject"] = subject
-    message["From"] = sender
-    message["To"] = recipient
-    message.set_content(body)
+    payload = json.dumps(
+        {
+            "from": sender,
+            "to": [recipient],
+            "subject": subject,
+            "text": body,
+        }
+    ).encode("utf-8")
+    request = UrlRequest(
+        "https://api.resend.com/emails",
+        data=payload,
+        method="POST",
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+            "User-Agent": "PDFaspect/1.0",
+        },
+    )
+    try:
+        with urlopen(request, timeout=12) as response:
+            if response.status < 200 or response.status >= 300:
+                raise RuntimeError(f"Resend returned HTTP {response.status}.")
+    except HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")[:500]
+        raise RuntimeError(f"Resend returned HTTP {exc.code}: {detail}") from exc
+    except URLError as exc:
+        raise RuntimeError(f"Could not reach Resend: {exc.reason}") from exc
 
-    if use_ssl:
-        with smtplib.SMTP_SSL(host, port, timeout=15) as smtp:
-            smtp.login(username, password)
-            smtp.send_message(message)
-    else:
-        with smtplib.SMTP(host, port, timeout=15) as smtp:
-            smtp.ehlo()
-            smtp.starttls()
-            smtp.ehlo()
-            smtp.login(username, password)
-            smtp.send_message(message)
+
+def _safe_send_email(recipient: str, subject: str, body: str) -> None:
+    try:
+        _send_email_message(recipient, subject, body)
+    except Exception as exc:
+        print(f"Transactional email delivery failed: {type(exc).__name__}: {exc}", flush=True)
 
 
 def _send_password_reset_email(recipient: str, reset_url: str) -> None:
-    _send_email_message(
+    _safe_send_email(
         recipient,
         "Reset your PDFaspect password",
         "We received a request to reset your PDFaspect password.\n\n"
@@ -504,7 +521,7 @@ def _send_password_reset_email(recipient: str, reset_url: str) -> None:
 
 
 def _send_verification_email(recipient: str, verify_url: str) -> None:
-    _send_email_message(
+    _safe_send_email(
         recipient,
         "Verify your PDFaspect email",
         "Welcome to PDFaspect.\n\n"
@@ -526,20 +543,22 @@ def request_password_reset(payload: PasswordResetRequest, request: Request):
     except AuthError:
         token = None
 
+    background = None
     if token:
-        reset_url = (
-            f"{_public_url(request)}/?reset_token={token}#account"
+        reset_url = f"{_public_url(request)}/?reset_token={token}#account"
+        background = BackgroundTask(
+            _send_password_reset_email,
+            payload.email.strip().lower(),
+            reset_url,
         )
-        try:
-            _send_password_reset_email(payload.email.strip().lower(), reset_url)
-        except Exception:
-            # Never disclose whether the account exists. Operators can inspect logs.
-            print("Password reset email delivery failed.", flush=True)
 
-    return {
-        "ok": True,
-        "message": "If an account exists for that email, a reset link has been sent.",
-    }
+    return JSONResponse(
+        {
+            "ok": True,
+            "message": "If an account exists for that email, a reset link has been sent.",
+        },
+        background=background,
+    )
 
 
 @app.post("/api/auth/password-reset/confirm")
@@ -562,17 +581,18 @@ def register_account(credentials: AuthCredentials, request: Request):
     except AuthError as exc:
         raise HTTPException(400, str(exc)) from exc
 
+    background = None
     if _password_reset_email_configured():
         try:
             verify_token = AUTH_STORE.create_email_verification(
                 user.id, ttl_seconds=24 * 60 * 60
             )
             verify_url = f"{_public_url(request)}/api/auth/verify-email?token={verify_token}"
-            _send_verification_email(user.email, verify_url)
-        except Exception:
-            print("Email verification delivery failed.", flush=True)
+            background = BackgroundTask(_send_verification_email, user.email, verify_url)
+        except Exception as exc:
+            print(f"Could not prepare verification email: {type(exc).__name__}: {exc}", flush=True)
 
-    return _auth_response(user, token, request)
+    return _auth_response(user, token, request, background=background)
 
 
 @app.get("/api/auth/verify-email", response_class=HTMLResponse)
@@ -640,6 +660,25 @@ def _signed_in_user(request: Request):
     if not user:
         raise HTTPException(401, "Sign in to continue.")
     return user
+
+
+@app.post("/api/auth/verify-email/resend")
+def resend_verification_email(request: Request):
+    _rate_limit(request, "verify-email-resend", 5, 60 * 60)
+    user = _signed_in_user(request)
+    if AUTH_STORE.email_is_verified(user.id):
+        return {"ok": True, "message": "Your email is already verified."}
+    if not _password_reset_email_configured():
+        raise HTTPException(503, "Verification email is not configured yet.")
+
+    verify_token = AUTH_STORE.create_email_verification(
+        user.id, ttl_seconds=24 * 60 * 60
+    )
+    verify_url = f"{_public_url(request)}/api/auth/verify-email?token={verify_token}"
+    return JSONResponse(
+        {"ok": True, "message": "Verification email sent."},
+        background=BackgroundTask(_send_verification_email, user.email, verify_url),
+    )
 
 
 def _public_url(request: Request) -> str:
