@@ -1,0 +1,40 @@
+name: PDF tool smoke tests
+
+on:
+  push:
+    branches:
+      - test/pdf-tool-smoke
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libreoffice ghostscript tesseract-ocr tesseract-ocr-eng redis-server
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Start Redis
+        run: |
+          sudo systemctl start redis-server
+          redis-cli ping
+
+      - name: Run PDF tool tests
+        env:
+          PAPERMINT_REQUIRE_LIBREOFFICE: "1"
+          PAPERMINT_SOFFICE: /usr/bin/libreoffice
+          REDIS_URL: redis://127.0.0.1:6379/0
+        run: |
+          pytest -q             tests/test_extra_engines.py             tests/test_remaining_api.py             tests/test_queue_dispatch.py             tests/test_free_limits.py
