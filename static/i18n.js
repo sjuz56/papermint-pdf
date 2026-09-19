@@ -201,7 +201,8 @@
     return supported.includes(base) ? base : 'en';
   }
 
-  let language = normalizeLanguage(localStorage.getItem('papermint-language') || navigator.language);
+  const routeLanguage = document.documentElement.dataset.defaultLanguage;
+  let language = normalizeLanguage(routeLanguage || localStorage.getItem('papermint-language') || navigator.language);
 
   function t(key, variables = {}) {
     let value = messages[language]?.[key] || messages.en[key] || key;
