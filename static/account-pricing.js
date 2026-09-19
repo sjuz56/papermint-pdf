@@ -14,6 +14,8 @@ const passwordResetPanel = document.getElementById('passwordResetPanel');
 const passwordResetStatus = document.getElementById('passwordResetStatus');
 const passwordResetRequestForm = document.getElementById('passwordResetRequestForm');
 const passwordResetConfirmForm = document.getElementById('passwordResetConfirmForm');
+const passwordResetNewPassword = document.getElementById('passwordResetNewPassword');
+const passwordResetToggle = document.getElementById('passwordResetToggle');
 const checkoutModal = document.getElementById('checkoutModal');
 const checkoutConsent = document.getElementById('checkoutConsent');
 const checkoutContinue = document.getElementById('checkoutContinue');
@@ -30,11 +32,23 @@ function setPasswordVisibility(visible) {
   );
 }
 
+function setResetPasswordVisibility(visible) {
+  if (!passwordResetNewPassword || !passwordResetToggle) return;
+  passwordResetNewPassword.type = visible ? 'text' : 'password';
+  passwordResetToggle.setAttribute('aria-pressed', String(visible));
+  passwordResetToggle.textContent = accountT(visible ? 'auth.hidePassword' : 'auth.showPassword');
+  passwordResetToggle.setAttribute(
+    'aria-label',
+    accountT(visible ? 'auth.hidePassword' : 'auth.showPassword')
+  );
+}
+
 function setPasswordResetMode(confirming = false) {
   authMainPanel?.classList.add('hidden');
   passwordResetPanel?.classList.remove('hidden');
   passwordResetRequestForm?.classList.toggle('hidden', confirming);
   passwordResetConfirmForm?.classList.toggle('hidden', !confirming);
+  setResetPasswordVisibility(false);
   const title = document.getElementById('passwordResetTitle');
   const subtitle = document.getElementById('passwordResetSubtitle');
   if (title) title.textContent = confirming ? 'Choose a new password' : 'Reset password';
@@ -233,6 +247,10 @@ document.getElementById('authClose')?.addEventListener('click', closeAuth);
 authPasswordToggle?.addEventListener('click', () => {
   setPasswordVisibility(authPassword?.type === 'password');
   authPassword?.focus();
+});
+passwordResetToggle?.addEventListener('click', () => {
+  setResetPasswordVisibility(passwordResetNewPassword?.type === 'password');
+  passwordResetNewPassword?.focus();
 });
 
 document.querySelectorAll('[data-auth-mode]').forEach(button => {
@@ -487,10 +505,12 @@ if (passwordResetToken) {
 window.addEventListener('papermint:languagechange', () => {
   renderAccount();
   setPasswordVisibility(authPassword?.type === 'text');
+  setResetPasswordVisibility(passwordResetNewPassword?.type === 'text');
   updateCheckoutPlanText();
 });
 
 setPasswordVisibility(false);
+setResetPasswordVisibility(false);
 
 const checkoutResult = new URLSearchParams(window.location.search).get('checkout');
 if (checkoutResult === 'success') {
