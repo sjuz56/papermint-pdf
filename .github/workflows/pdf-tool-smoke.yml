@@ -39,3 +39,19 @@ jobs:
           PYTHONPATH: .
         run: |
           pytest -q             tests/test_extra_engines.py             tests/test_remaining_api.py             tests/test_queue_dispatch.py             tests/test_free_limits.py
+
+      - name: Run real output smoke test
+        env:
+          PAPERMINT_REQUIRE_LIBREOFFICE: "1"
+          PAPERMINT_SOFFICE: /usr/bin/libreoffice
+          PYTHONPATH: .
+        run: |
+          python tests/real_output_smoke.py
+
+      - name: Upload smoke outputs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pdf-tool-real-outputs
+          path: smoke-output
+          if-no-files-found: error
