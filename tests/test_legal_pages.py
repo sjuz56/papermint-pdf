@@ -27,7 +27,20 @@ def test_home_page_links_to_terms():
     assert 'href="/terms"' in response.text
     assert 'href="/privacy"' in response.text
     assert '<link rel="canonical" href="https://pdfaspect.com/"' in response.text
+    assert '<link rel="alternate" hreflang="cs" href="https://pdfaspect.com/cs/"' in response.text
     assert '/tools/merge' in response.text
+
+
+def test_czech_home_page_has_czech_seo_content():
+    response = client.get("/cs/")
+
+    assert response.status_code == 200
+    assert '<html lang="cs" data-default-language="cs">' in response.text
+    assert '<title>PDFaspect — PDF nástroje</title>' in response.text
+    assert '<link rel="canonical" href="https://pdfaspect.com/cs/"' in response.text
+    assert 'hreflang="en" href="https://pdfaspect.com/"' in response.text
+    assert "Všechny PDF nástroje, které potřebujete." in response.text
+    assert "Sloučit PDF" in response.text
 
 
 def test_privacy_robots_sitemap_and_tool_pages_are_available():
@@ -39,6 +52,7 @@ def test_privacy_robots_sitemap_and_tool_pages_are_available():
     assert privacy.status_code == 200
     assert "Ochrana osobních údajů" in privacy.text
     assert "Sitemap: https://pdfaspect.com/sitemap.xml" in robots.text
+    assert "https://pdfaspect.com/cs/" in sitemap.text
     assert "https://pdfaspect.com/tools/compress" in sitemap.text
     assert tool.status_code == 200
     assert "Compress PDF online" in tool.text
