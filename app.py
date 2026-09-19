@@ -250,16 +250,84 @@ TOOLS = [
     ("ask-octo", "Ask Octo AI", "Summarize a PDF and ask three cited questions."),
 ]
 
+TOOLS_CS = {
+    "merge": ("Sloučit PDF", "Spojte PDF soubory v požadovaném pořadí."),
+    "split": ("Rozdělit PDF", "Rozdělte PDF na samostatné soubory nebo rozsahy stran."),
+    "compress": ("Komprimovat PDF", "Zmenšete velikost PDF při zachování kvality."),
+    "pdf-word": ("PDF do Wordu", "Převeďte PDF na upravitelný dokument Word."),
+    "pdf-ppt": ("PDF do PowerPointu", "Převeďte každou stránku PDF na snímek PowerPointu."),
+    "pdf-excel": ("PDF do Excelu", "Převeďte rozpoznané tabulky do sešitu XLSX."),
+    "pdf-jpg": ("PDF do JPG", "Převeďte stránky PDF na obrázky JPG."),
+    "word-pdf": ("Word do PDF", "Převeďte dokument DOC nebo DOCX do PDF."),
+    "ppt-pdf": ("PowerPoint do PDF", "Převeďte prezentaci PPT nebo PPTX do PDF."),
+    "excel-pdf": ("Excel do PDF", "Převeďte tabulku XLS nebo XLSX do PDF."),
+    "jpg-pdf": ("JPG do PDF", "Spojte obrázky do jednoho PDF."),
+    "sign": ("Podepsat PDF", "Přidejte na stránku PDF jednoduchý textový podpis."),
+    "watermark": ("Vodoznak", "Přidejte textový vodoznak na každou stránku."),
+    "rotate": ("Otočit PDF", "Otočte všechny stránky o 90, 180 nebo 270 stupňů."),
+    "html-pdf": ("HTML do PDF", "Převeďte nahraný soubor HTML do PDF."),
+    "unlock": ("Odemknout PDF", "Odstraňte ochranu PDF, pokud znáte heslo."),
+    "protect": ("Chránit PDF", "Zašifrujte PDF pomocí hesla."),
+    "organize": ("Uspořádat PDF", "Změňte pořadí stran například pomocí seznamu 3,1,2."),
+    "pdfa": ("PDF do PDF/A", "Vytvořte standardizovanou archivní kopii PDF/A-2b."),
+    "repair": ("Opravit PDF", "Přepište poškozené, ale čitelné PDF do nového souboru."),
+    "page-numbers": ("Čísla stránek", "Přidejte čísla na každou stránku PDF."),
+    "scan-pdf": ("Sken do PDF", "Převeďte fotografie nebo skeny z telefonu do PDF."),
+    "ocr": ("OCR PDF", "Rozpoznejte text z naskenovaných PDF ve více jazycích."),
+    "compare": ("Porovnat PDF", "Vytvořte přehled textových rozdílů mezi dvěma PDF."),
+    "redact": ("Začernit PDF", "Vyhledejte a trvale začerněte zadaný text."),
+    "crop": ("Oříznout PDF", "Ořízněte okraje všech stránek v milimetrech."),
+    "ask-octo": ("Ask Octo AI", "Shrňte PDF a položte tři otázky s odkazy na stránky."),
+}
 
-@app.get("/", response_class=HTMLResponse)
-def home():
+CS_HOME_REPLACEMENTS = {
+    '<html lang="en">': '<html lang="cs" data-default-language="cs">',
+    '<meta name="description" content="Convert, merge, split, compress, sign, protect and OCR PDF files online with PDFaspect."/>': '<meta name="description" content="Převádějte, slučujte, rozdělujte, komprimujte, podepisujte, chraňte a rozpoznávejte PDF online s PDFaspect."/>',
+    '<link rel="canonical" href="https://pdfaspect.com/"/>': '<link rel="canonical" href="https://pdfaspect.com/cs/"/>',
+    '<meta property="og:type" content="website"/><meta property="og:url" content="https://pdfaspect.com/"/>': '<meta property="og:type" content="website"/><meta property="og:url" content="https://pdfaspect.com/cs/"/>',
+    '<meta property="og:title" content="PDFaspect — online PDF tools"/>': '<meta property="og:title" content="PDFaspect — online PDF nástroje"/>',
+    '<meta property="og:description" content="27 simple PDF tools for conversion, editing, OCR and document management."/>': '<meta property="og:description" content="27 jednoduchých PDF nástrojů pro převod, úpravy, OCR a správu dokumentů."/>',
+    '<title>PDFaspect — PDF tools</title>': '<title>PDFaspect — PDF nástroje</title>',
+    '>PDF tools</a>': '>PDF nástroje</a>',
+    '>Pricing</a>': '>Ceník</a>',
+    '>Privacy</a>': '>Soukromí</a>',
+    '>Language</span>': '>Jazyk</span>',
+    '>Sign in</button>': '>Přihlásit se</button>',
+    '>Fast • private • simple</div>': '>Rychlé • soukromé • jednoduché</div>',
+    '>Every PDF tool you need.</span>': '>Všechny PDF nástroje, které potřebujete.</span>',
+    '>Simple and secure.</span>': '>Snadno a bezpečně.</span>',
+    '>Convert, organize, compress, sign, protect, and OCR documents directly in your browser.</p>': '>Převádějte, organizujte, komprimujte, podepisujte, chraňte a rozpoznávejte dokumenty přímo v prohlížeči.</p>',
+    '>27 useful tools</span>': '>27 užitečných nástrojů</span>',
+    '>Files deleted automatically</span>': '>Soubory mažeme automaticky</span>',
+    '>No account for Free</span>': '>Zdarma bez účtu</span>',
+    '>All PDF tools</h2>': '>Všechny PDF nástroje</h2>',
+    '>Every tool is listed here. Pick one and process your document.</p>': '>Všechny nástroje najdete zde. Vyberte si a zpracujte dokument.</p>',
+    'placeholder="Search all 27 tools…"': 'placeholder="Hledat ve 27 nástrojích…"',
+}
+
+
+def _render_home(language: str = "en") -> str:
     page = (BASE / "static" / "index.html").read_text(encoding="utf-8")
+    if language == "cs":
+        for source, replacement in CS_HOME_REPLACEMENTS.items():
+            page = page.replace(source, replacement)
     cards = "".join(
         f'<a class="card" href="/tools/{escape(tool_id)}"><div class="icon">PDF</div>'
-        f'<h3>{escape(name)}</h3><p>{escape(description)}</p></a>'
+        f'<h3>{escape(TOOLS_CS.get(tool_id, (name, description))[0] if language == "cs" else name)}</h3>'
+        f'<p>{escape(TOOLS_CS.get(tool_id, (name, description))[1] if language == "cs" else description)}</p></a>'
         for tool_id, name, description in TOOLS
     )
     return page.replace("<!-- TOOL_CARDS -->", cards)
+
+
+@app.get("/", response_class=HTMLResponse)
+def home():
+    return _render_home()
+
+
+@app.get("/cs/", response_class=HTMLResponse)
+def home_cs():
+    return _render_home("cs")
 
 
 @app.get("/terms", response_class=HTMLResponse)
@@ -284,9 +352,9 @@ def robots():
 
 @app.get("/sitemap.xml")
 def sitemap():
-    paths = ["", "terms", "privacy", *(f"tools/{tool_id}" for tool_id, _, _ in TOOLS)]
+    paths = ["", "cs/", "terms", "privacy", *(f"tools/{tool_id}" for tool_id, _, _ in TOOLS)]
     urls = "".join(
-        f"<url><loc>https://pdfaspect.com/{path}</loc><lastmod>2026-09-17</lastmod></url>"
+        f"<url><loc>https://pdfaspect.com/{path}</loc><lastmod>2026-09-19</lastmod></url>"
         for path in paths
     )
     return Response(
