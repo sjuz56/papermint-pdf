@@ -1,0 +1,23 @@
+name: Ask Octo status probe
+
+on:
+  push:
+    branches:
+      - test/pdf-tool-smoke
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check live Ask Octo status
+        run: |
+          set -euo pipefail
+          body="$(curl -fsS --retry 3 --retry-delay 2 https://pdfaspect.com/api/ai/status)"
+          echo "$body"
+          python - <<'PY' "$body"
+          import json, sys
+          data = json.loads(sys.argv[1])
+          assert data.get("configured") is True, data
+          print("Ask Octo is configured on the live site.")
+          PY
