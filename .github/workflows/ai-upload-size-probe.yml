@@ -1,0 +1,29 @@
+name: Ask Octo upload size probe
+
+on:
+  push:
+    branches:
+      - test/pdf-tool-smoke
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Probe live multipart upload sizes
+        shell: bash
+        run: |
+          set -euo pipefail
+          for mb in 1 10 20 49; do
+            file="/tmp/probe-${mb}mb.pdf"
+            dd if=/dev/zero of="$file" bs=1M count="$mb" status=none
+            code="$(curl -sS -o /tmp/body.txt -w "%{http_code}"               --connect-timeout 20 --max-time 120               -F "file=@$file;type=application/pdf"               -F "ocr_language=eng"               -F "response_language=en"               https://pdfaspect.com/api/ai/document || true)"
+            echo "${mb}MB -> HTTP $code"
+            cat /tmp/body.txt || true
+            echo
+            case "$code" in
+              401|403) ;;
+              *) echo "Unexpected status for ${mb}MB upload"; exit 1 ;;
+            esac
+          done
+          echo "All tested multipart upload sizes reached the live application."
