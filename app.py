@@ -306,13 +306,211 @@ CS_HOME_REPLACEMENTS = {
 }
 
 
+SEO_LASTMOD = "2026-09-21"
+
+SEO_TOOL_PAGES = {
+    "pdf-word": {
+        "en": {
+            "title": "PDF to Word Online — Convert PDF to DOCX | PDFaspect",
+            "meta": "Convert PDF to Word online and create an editable DOCX file. Fast browser-based PDF conversion with automatic file deletion.",
+            "h1": "Convert PDF to Word online",
+            "intro": "Turn a PDF into an editable Word document without installing desktop software. PDFaspect converts your PDF to DOCX so you can revise text, reuse content and continue working in Microsoft Word or another compatible editor.",
+            "why": "PDF to Word is useful when you receive a report, form, contract draft or other PDF that needs editing. The converter is designed to preserve the document structure as closely as practical while producing a real DOCX file instead of a collection of page images.",
+            "notes": "Text-based PDFs usually convert most cleanly. Scanned documents may need OCR first, and very complex layouts can require small manual adjustments after conversion. For best results, start with the original PDF rather than a photographed copy.",
+            "use_cases": ["Edit text from a PDF in Word", "Reuse paragraphs, headings and tables", "Prepare an existing document for further revisions"],
+        },
+        "cs": {
+            "title": "PDF do Wordu online — převod PDF na DOCX | PDFaspect",
+            "meta": "Převeďte PDF do Wordu online a vytvořte upravitelný DOCX. Rychlý převod PDF s automatickým mazáním souborů.",
+            "h1": "Převod PDF do Wordu online",
+            "intro": "Převeďte PDF na upravitelný dokument Word bez instalace programu. PDFaspect vytvoří soubor DOCX, ve kterém můžete dál upravovat text, kopírovat obsah nebo pokračovat v práci v Microsoft Wordu či jiném kompatibilním editoru.",
+            "why": "Převod PDF do Wordu se hodí například u reportů, formulářů, smluvních návrhů nebo dokumentů, které jste dostali pouze jako PDF a potřebujete je změnit. Výstupem je skutečný DOCX, nikoli jen obrázky jednotlivých stránek.",
+            "notes": "Nejlépe se převádějí PDF obsahující skutečný text. U naskenovaných dokumentů může být před převodem potřeba OCR a velmi složité rozvržení může po převodu vyžadovat drobné ruční úpravy.",
+            "use_cases": ["Úprava textu z PDF ve Wordu", "Opětovné použití odstavců, nadpisů a tabulek", "Příprava staršího dokumentu k dalším úpravám"],
+        },
+    },
+    "merge": {
+        "en": {
+            "title": "Merge PDF Online Free — Combine PDF Files | PDFaspect",
+            "meta": "Merge PDF files online in the order you choose. Combine multiple PDFs into one document quickly, with no account required for Free use.",
+            "h1": "Merge PDF files online",
+            "intro": "Combine several PDF files into one document directly in your browser. Choose the files you want, keep them in the required order and let PDFaspect create a single merged PDF for download.",
+            "why": "Merging PDFs is useful when invoices, reports, scanned pages or project documents arrive as separate files but need to be shared or archived together. One combined PDF is easier to send, store and review than a folder full of individual attachments.",
+            "notes": "The pages are combined in the same order as the uploaded files. If page order inside a document needs changing, use Organize PDF first. Password-protected files may need to be unlocked before they can be merged.",
+            "use_cases": ["Combine several reports into one PDF", "Join scanned pages or forms", "Create one attachment from multiple PDF files"],
+        },
+        "cs": {
+            "title": "Sloučit PDF online zdarma — spojení PDF souborů | PDFaspect",
+            "meta": "Sloučte PDF soubory online v pořadí, které potřebujete. Spojte více PDF do jednoho dokumentu rychle a zdarma.",
+            "h1": "Sloučit PDF soubory online",
+            "intro": "Spojte několik PDF do jednoho dokumentu přímo v prohlížeči. Vyberte soubory, seřaďte je v požadovaném pořadí a PDFaspect vytvoří jeden výsledný PDF soubor ke stažení.",
+            "why": "Sloučení PDF se hodí, když máte faktury, reporty, naskenované stránky nebo projektové dokumenty v několika samostatných souborech, ale chcete je odeslat či archivovat společně. Jeden soubor se snadněji sdílí i kontroluje.",
+            "notes": "Stránky se spojí podle pořadí nahraných souborů. Pokud potřebujete změnit pořadí stránek uvnitř jednoho PDF, použijte nejdříve nástroj Uspořádat PDF. Zaheslované dokumenty může být nutné před sloučením odemknout.",
+            "use_cases": ["Spojení několika reportů do jednoho PDF", "Sloučení skenů nebo formulářů", "Vytvoření jediné přílohy z více PDF"],
+        },
+    },
+    "compress": {
+        "en": {
+            "title": "Compress PDF Online — Reduce PDF File Size | PDFaspect",
+            "meta": "Compress PDF online to reduce file size for email, upload or storage. Make PDFs smaller while keeping the document readable.",
+            "h1": "Compress PDF online",
+            "intro": "Reduce the size of a PDF when it is too large to email, upload or store conveniently. PDFaspect rewrites and optimizes the document to create a smaller PDF while aiming to keep text and pages readable.",
+            "why": "PDF compression is particularly useful for documents containing large images, scans or unnecessary internal data. A smaller file can upload faster, use less cloud storage and fit within attachment limits imposed by email providers or online forms.",
+            "notes": "The amount of reduction depends on the original file. A PDF that is already highly optimized may shrink only slightly, while image-heavy documents can often be reduced much more. Always check the downloaded result when image quality is important.",
+            "use_cases": ["Reduce a PDF before sending it by email", "Fit a document under an upload limit", "Save space when archiving many PDFs"],
+        },
+        "cs": {
+            "title": "Komprimovat PDF online — zmenšení velikosti PDF | PDFaspect",
+            "meta": "Komprimujte PDF online a zmenšete velikost souboru pro e-mail, nahrání nebo archivaci při zachování čitelnosti.",
+            "h1": "Komprimovat PDF online",
+            "intro": "Zmenšete velikost PDF, pokud je příliš velké pro e-mail, formulář nebo pohodlné ukládání. PDFaspect dokument optimalizuje a vytvoří menší PDF se snahou zachovat text i stránky dobře čitelné.",
+            "why": "Komprese PDF pomáhá hlavně u dokumentů s velkými obrázky, skeny nebo zbytečnými interními daty. Menší soubor se rychleji nahrává, zabírá méně místa a snáze se vejde do limitu e-mailové přílohy nebo webového formuláře.",
+            "notes": "Výsledná úspora závisí na původním dokumentu. Už optimalizované PDF se může zmenšit jen málo, zatímco soubory plné obrázků lze často zmenšit výrazněji. Pokud je důležitá kvalita obrázků, stažený výsledek vždy zkontrolujte.",
+            "use_cases": ["Zmenšení PDF před odesláním e-mailem", "Splnění limitu velikosti při nahrávání", "Úspora místa při archivaci většího počtu PDF"],
+        },
+    },
+    "word-pdf": {
+        "en": {
+            "title": "Word to PDF Online — Convert DOCX to PDF | PDFaspect",
+            "meta": "Convert Word to PDF online. Turn DOC or DOCX documents into shareable PDF files directly in your browser.",
+            "h1": "Convert Word to PDF online",
+            "intro": "Convert a Word document into a PDF that is easier to share, print and archive. Upload a DOC or DOCX file and PDFaspect creates a PDF version without requiring Microsoft Word on the device.",
+            "why": "A PDF is useful when the recipient should see a stable document rather than an editable Word file. Converting to PDF also helps when uploading a CV, form, report or other document to a service that specifically requests PDF format.",
+            "notes": "Complex Word layouts can render differently depending on fonts, page settings and embedded objects. If exact appearance matters, review the downloaded PDF before sending it. Standard documents with common fonts generally produce the most predictable results.",
+            "use_cases": ["Send a CV or report as PDF", "Create a print-friendly version of a Word document", "Upload DOCX content to systems that require PDF"],
+        },
+        "cs": {
+            "title": "Word do PDF online — převod DOCX na PDF | PDFaspect",
+            "meta": "Převeďte Word do PDF online. Změňte dokument DOC nebo DOCX na snadno sdílený PDF soubor přímo v prohlížeči.",
+            "h1": "Převod Wordu do PDF online",
+            "intro": "Převeďte dokument Word na PDF, které se snadno sdílí, tiskne a archivuje. Nahrajte DOC nebo DOCX a PDFaspect vytvoří PDF verzi bez nutnosti mít na zařízení nainstalovaný Microsoft Word.",
+            "why": "PDF je praktické, když má příjemce vidět stabilní dokument místo upravitelného souboru Word. Převod se hodí také při nahrávání životopisu, formuláře nebo reportu do systému, který vyžaduje právě formát PDF.",
+            "notes": "Složité rozvržení Wordu může vypadat mírně odlišně podle použitých fontů, nastavení stránky a vložených objektů. Pokud je přesný vzhled zásadní, výsledné PDF před odesláním zkontrolujte.",
+            "use_cases": ["Odeslání životopisu nebo reportu jako PDF", "Vytvoření verze vhodné k tisku", "Nahrání DOCX do systému, který přijímá pouze PDF"],
+        },
+    },
+    "pdf-jpg": {
+        "en": {
+            "title": "PDF to JPG Online — Convert PDF Pages to Images | PDFaspect",
+            "meta": "Convert PDF pages to JPG images online. Export each PDF page as an image for sharing, previews, presentations or reuse.",
+            "h1": "Convert PDF to JPG online",
+            "intro": "Turn PDF pages into JPG images directly in your browser. PDFaspect renders each page as an image, making it easier to reuse a page in presentations, websites, messages or other applications that do not accept PDF files.",
+            "why": "PDF to JPG is useful when you need a visual copy of a page rather than editable text. It can also help with quick previews, social posts, presentation slides or systems that accept images but not PDF documents.",
+            "notes": "Each PDF page is rendered as a separate image. Image conversion does not preserve selectable text because the output is a picture of the page. For editable text, use PDF to Word or OCR instead.",
+            "use_cases": ["Export PDF pages as images", "Create previews for presentations or websites", "Use a PDF page in an app that only accepts JPG files"],
+        },
+        "cs": {
+            "title": "PDF do JPG online — převod stránek PDF na obrázky | PDFaspect",
+            "meta": "Převeďte PDF do JPG online. Exportujte jednotlivé stránky PDF jako obrázky pro sdílení, prezentace nebo další použití.",
+            "h1": "Převod PDF do JPG online",
+            "intro": "Převeďte stránky PDF na obrázky JPG přímo v prohlížeči. PDFaspect vykreslí každou stránku jako obrázek, který můžete snadno použít v prezentaci, na webu, ve zprávě nebo v aplikaci, která PDF nepodporuje.",
+            "why": "Převod PDF do JPG se hodí, když potřebujete vizuální kopii stránky místo upravitelného textu. Obrázky jsou praktické také pro rychlé náhledy, prezentace nebo systémy, které přijímají obrázky, ale ne PDF.",
+            "notes": "Každá stránka PDF se převede na samostatný obrázek. V JPG už text nelze označovat jako text, protože výstupem je obrázek celé stránky. Pro upravitelný text použijte raději PDF do Wordu nebo OCR.",
+            "use_cases": ["Export jednotlivých stránek PDF jako obrázků", "Tvorba náhledů pro prezentace nebo web", "Použití stránky PDF v aplikaci přijímající pouze JPG"],
+        },
+    },
+}
+
+
+def _tool_href(tool_id: str, language: str) -> str:
+    if language == "cs" and tool_id in SEO_TOOL_PAGES:
+        return f"/cs/tools/{tool_id}"
+    return f"/tools/{tool_id}"
+
+
+def _render_seo_tool_page(tool_id: str, language: str) -> str:
+    tool = next((item for item in TOOLS if item[0] == tool_id), None)
+    if not tool:
+        raise HTTPException(404, "PDF tool not found.")
+
+    _, default_name, default_description = tool
+    localized = SEO_TOOL_PAGES.get(tool_id, {}).get(language)
+    if localized:
+        name = localized["h1"]
+        title = localized["title"]
+        description = localized["meta"]
+        intro = localized["intro"]
+        why = localized["why"]
+        notes = localized["notes"]
+        use_cases = localized["use_cases"]
+    else:
+        if language == "cs":
+            name, default_description = TOOLS_CS.get(tool_id, (default_name, default_description))
+        else:
+            name = default_name
+        title = f"{name} online — PDFaspect"
+        description = default_description
+        intro = default_description
+        why = ""
+        notes = ""
+        use_cases = []
+
+    prefix = "/cs" if language == "cs" else ""
+    canonical = f"https://pdfaspect.com{prefix}/tools/{tool_id}"
+    en_url = f"https://pdfaspect.com/tools/{tool_id}"
+    cs_url = f"https://pdfaspect.com/cs/tools/{tool_id}"
+    has_cs = tool_id in SEO_TOOL_PAGES
+    all_tools_text = "Všechny PDF nástroje" if language == "cs" else "All PDF tools"
+    open_text = "Otevřít nástroj" if language == "cs" else f"Open {default_name}"
+    pill = "Online PDF nástroj" if language == "cs" else "Online PDF tool"
+    how_title = "Jak převod funguje" if language == "cs" else "How it works"
+    why_title = "Kdy se nástroj hodí" if language == "cs" else "When this tool is useful"
+    notes_title = "Co je dobré vědět" if language == "cs" else "What to know before you start"
+    privacy_title = "Soukromí a limity" if language == "cs" else "Privacy and limits"
+    privacy_text = (
+        "Nahrané originály mažeme po zpracování. Výsledné soubory se mažou po stažení nebo automaticky nejpozději do 30 minut. "
+        "Bezplatná verze umožňuje 2 PDF úlohy denně a soubory do 10 MB; PRO má vyšší limity."
+        if language == "cs"
+        else
+        "Uploaded originals are deleted after processing. Downloadable results are deleted after download or automatically within 30 minutes. "
+        "Free use includes 2 PDF tasks per day with files up to 10 MB; PRO provides higher limits."
+    )
+    steps = (
+        ["Vyberte soubor nebo soubory.", "Spusťte zpracování v prohlížeči.", "Stáhněte hotový výsledek."]
+        if language == "cs"
+        else
+        ["Choose the file or files you want to process.", "Start the conversion in your browser.", "Download the finished result."]
+    )
+    step_items = "".join(f"<li>{escape(item)}</li>" for item in steps)
+    use_items = "".join(f"<li>{escape(item)}</li>" for item in use_cases)
+    alternates = f'<link rel="alternate" hreflang="en" href="{en_url}">'
+    if has_cs:
+        alternates += f'<link rel="alternate" hreflang="cs" href="{cs_url}"><link rel="alternate" hreflang="x-default" href="{en_url}">'
+
+    content = ""
+    if localized:
+        content = f"""
+<section class="legal-content">
+  <section><h2>{escape(how_title)}</h2><ol>{step_items}</ol></section>
+  <section><h2>{escape(why_title)}</h2><p>{escape(why)}</p><ul>{use_items}</ul></section>
+  <section><h2>{escape(notes_title)}</h2><p>{escape(notes)}</p></section>
+  <section><h2>{escape(privacy_title)}</h2><p>{escape(privacy_text)}</p></section>
+</section>"""
+
+    return f"""<!doctype html><html lang="{language}"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>{escape(title)}</title>
+<meta name="description" content="{escape(description)}"><meta name="robots" content="index,follow,max-image-preview:large">
+<link rel="canonical" href="{canonical}">{alternates}
+<meta property="og:type" content="website"><meta property="og:url" content="{canonical}">
+<meta property="og:title" content="{escape(title)}"><meta property="og:description" content="{escape(description)}">
+<meta property="og:image" content="https://pdfaspect.com/static/assets/octopus-logo.png">
+<link rel="icon" href="/static/assets/octopus-logo.png"><link rel="stylesheet" href="/static/style.css?v=20260916-2"></head>
+<body class="legal-page"><header class="topbar legal-topbar"><a class="brand" href="{prefix or '/'}">PDF<span>aspect</span></a>
+<a class="ghost" href="{prefix or '/'}/#tools">{escape(all_tools_text)}</a></header><main class="legal-shell"><div class="legal-hero">
+<div class="pill">{escape(pill)}</div><h1>{escape(name)}</h1><p>{escape(intro)}</p>
+<a class="primary tool-page-action" href="/?tool={escape(tool_id)}#tools">{escape(open_text)}</a></div>{content}</main>
+<footer><span>© 2026 PDFaspect</span><span class="footer-links"><a href="/terms">Terms</a><a href="/privacy">Privacy</a></span></footer>
+<script src="/static/analytics.js"></script></body></html>"""
+
+
+
 def _render_home(language: str = "en") -> str:
     page = (BASE / "static" / "index.html").read_text(encoding="utf-8")
     if language == "cs":
         for source, replacement in CS_HOME_REPLACEMENTS.items():
             page = page.replace(source, replacement)
     cards = "".join(
-        f'<a class="card" href="/tools/{escape(tool_id)}"><div class="icon">PDF</div>'
+        f'<a class="card" href="{escape(_tool_href(tool_id, language))}"><div class="icon">PDF</div>'
         f'<h3>{escape(TOOLS_CS.get(tool_id, (name, description))[0] if language == "cs" else name)}</h3>'
         f'<p>{escape(TOOLS_CS.get(tool_id, (name, description))[1] if language == "cs" else description)}</p></a>'
         for tool_id, name, description in TOOLS
@@ -352,9 +550,11 @@ def robots():
 
 @app.get("/sitemap.xml")
 def sitemap():
-    paths = ["", "cs/", "terms", "privacy", *(f"tools/{tool_id}" for tool_id, _, _ in TOOLS)]
+    base_paths = ["", "cs/", "terms", "privacy", *(f"tools/{tool_id}" for tool_id, _, _ in TOOLS)]
+    localized_paths = [f"cs/tools/{tool_id}" for tool_id in SEO_TOOL_PAGES]
+    paths = [*base_paths, *localized_paths]
     urls = "".join(
-        f"<url><loc>https://pdfaspect.com/{path}</loc><lastmod>2026-09-19</lastmod></url>"
+        f"<url><loc>https://pdfaspect.com/{path}</loc><lastmod>{SEO_LASTMOD}</lastmod></url>"
         for path in paths
     )
     return Response(
@@ -365,23 +565,14 @@ def sitemap():
 
 @app.get("/tools/{tool_id}", response_class=HTMLResponse)
 def tool_page(tool_id: str):
-    tool = next((item for item in TOOLS if item[0] == tool_id), None)
-    if not tool:
-        raise HTTPException(404, "PDF tool not found.")
-    _, name, description = tool
-    title = escape(f"{name} online — PDFaspect")
-    summary = escape(description)
-    canonical = f"https://pdfaspect.com/tools/{escape(tool_id)}"
-    return f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1"><title>{title}</title>
-<meta name="description" content="{summary}"><link rel="canonical" href="{canonical}">
-<link rel="icon" href="/static/assets/octopus-logo.png"><link rel="stylesheet" href="/static/style.css"></head>
-<body class="legal-page"><header class="topbar legal-topbar"><a class="brand" href="/">PDF<span>aspect</span></a>
-<a class="ghost" href="/#tools">All PDF tools</a></header><main class="legal-shell"><div class="legal-hero">
-<div class="pill">Online PDF tool</div><h1>{escape(name)}</h1><p>{summary}</p>
-<a class="primary tool-page-action" href="/?tool={escape(tool_id)}#tools">Open {escape(name)}</a></div></main>
-<footer><span>© 2026 PDFaspect</span><span class="footer-links"><a href="/terms">Terms</a><a href="/privacy">Privacy</a></span></footer>
-<script src="/static/analytics.js"></script></body></html>"""
+    return _render_seo_tool_page(tool_id, "en")
+
+
+@app.get("/cs/tools/{tool_id}", response_class=HTMLResponse)
+def tool_page_cs(tool_id: str):
+    if tool_id not in SEO_TOOL_PAGES:
+        raise HTTPException(404, "Česká SEO stránka tohoto nástroje zatím není dostupná.")
+    return _render_seo_tool_page(tool_id, "cs")
 
 
 @app.get("/api/tools")
