@@ -496,7 +496,7 @@ def _render_seo_tool_page(tool_id: str, language: str) -> str:
 <meta property="og:image" content="https://pdfaspect.com/static/assets/octopus-logo.png">
 <link rel="icon" href="/static/assets/octopus-logo.png"><link rel="stylesheet" href="/static/style.css?v=20260916-2"></head>
 <body class="legal-page"><header class="topbar legal-topbar"><a class="brand" href="{prefix or '/'}">PDF<span>aspect</span></a>
-<a class="ghost" href="{prefix or '/'}/#tools">{escape(all_tools_text)}</a></header><main class="legal-shell"><div class="legal-hero">
+<a class="ghost" href="{('/cs/' if language == 'cs' else '/')}#tools">{escape(all_tools_text)}</a></header><main class="legal-shell"><div class="legal-hero">
 <div class="pill">{escape(pill)}</div><h1>{escape(name)}</h1><p>{escape(intro)}</p>
 <a class="primary tool-page-action" href="/?tool={escape(tool_id)}#tools">{escape(open_text)}</a></div>{content}</main>
 <footer><span>© 2026 PDFaspect</span><span class="footer-links"><a href="/terms">Terms</a><a href="/privacy">Privacy</a></span></footer>
