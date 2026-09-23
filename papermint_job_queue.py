@@ -25,6 +25,7 @@ from papermint_sign_engine import SignError, sign_pdf
 from papermint_watermark_engine import WatermarkError, watermark_pdf
 from papermint_page_numbers_engine import PageNumbersError, add_page_numbers
 from papermint_pdf_ppt_engine import PdfPowerPointError, pdf_to_powerpoint
+from papermint_pdf_epub_engine import PdfEpubError, pdf_to_epub
 from papermint_limits import FreeLimitUnavailable, release_free_task
 from papermint_extra_engines import (
     CompareError,
@@ -81,6 +82,7 @@ KNOWN_TOOL_ERRORS = (
     WatermarkError,
     PageNumbersError,
     PdfPowerPointError,
+    PdfEpubError,
     PdfExcelError,
     PdfJpgError,
     OfficePdfError,
@@ -316,6 +318,10 @@ def process_tool_job(
             media_type = (
                 "application/vnd.openxmlformats-officedocument.presentationml.presentation"
             )
+        elif tool == "pdf-epub":
+            report = pdf_to_epub(sources[0], output)
+            download_name = "converted.epub"
+            media_type = "application/epub+zip"
         elif tool == "pdf-excel":
             report = pdf_to_excel(sources[0], output)
             download_name = "converted.xlsx"
