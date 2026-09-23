@@ -289,7 +289,7 @@ CS_HOME_REPLACEMENTS = {
     '<link rel="canonical" href="https://pdfaspect.com/"/>': '<link rel="canonical" href="https://pdfaspect.com/cs/"/>',
     '<meta property="og:type" content="website"/><meta property="og:url" content="https://pdfaspect.com/"/>': '<meta property="og:type" content="website"/><meta property="og:url" content="https://pdfaspect.com/cs/"/>',
     '<meta property="og:title" content="PDFaspect — online PDF tools"/>': '<meta property="og:title" content="PDFaspect — online PDF nástroje"/>',
-    '<meta property="og:description" content="27 simple PDF tools for conversion, editing, OCR and document management."/>': '<meta property="og:description" content="27 jednoduchých PDF nástrojů pro převod, úpravy, OCR a správu dokumentů."/>',
+    '<meta property="og:description" content="28 simple PDF tools for conversion, editing, OCR and document management."/>': '<meta property="og:description" content="28 jednoduchých PDF nástrojů pro převod, úpravy, OCR a správu dokumentů."/>',
     '<title>PDFaspect — PDF tools</title>': '<title>PDFaspect — PDF nástroje</title>',
     '>PDF tools</a>': '>PDF nástroje</a>',
     '>Pricing</a>': '>Ceník</a>',
