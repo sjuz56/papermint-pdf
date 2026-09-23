@@ -8,8 +8,16 @@ on:
 jobs:
   ping:
     runs-on: ubuntu-latest
-    timeout-minutes: 2
+    timeout-minutes: 4
     steps:
       - name: Ping PDFaspect
         run: |
-          curl --fail --silent --show-error --max-time 60 https://pdfaspect.com/ > /dev/null
+          for attempt in 1 2 3; do
+            if curl --fail --silent --show-error --max-time 60 https://pdfaspect.com/ > /dev/null; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              sleep 10
+            fi
+          done
+          exit 1
