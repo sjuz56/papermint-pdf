@@ -30,6 +30,7 @@ const labels = {
   'pdf-ppt': 'PPTX',
   'pdf-excel': 'XLSX',
   'pdf-jpg': 'JPG',
+  'pdf-epub': 'EPUB',
   'word-pdf': 'PDF',
   'ppt-pdf': 'PDF',
   'excel-pdf': 'PDF',
