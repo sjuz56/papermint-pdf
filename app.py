@@ -148,6 +148,7 @@ RESULT_FILE_PREFIXES = (
     "pdf-ppt-",
     "pdf-excel-",
     "pdf-jpg-",
+    "pdf-epub-",
     "ppt-pdf-",
     "excel-pdf-",
     "image-pdf-",
@@ -228,6 +229,7 @@ TOOLS = [
     ("pdf-ppt", "PDF to PowerPoint", "Convert each PDF page to a PowerPoint slide."),
     ("pdf-excel", "PDF to Excel", "Extract detected tables into an XLSX workbook."),
     ("pdf-jpg", "PDF to JPG", "Render PDF pages as JPG images."),
+    ("pdf-epub", "PDF to EPUB", "Convert a text-based PDF into a reflowable EPUB e-book."),
     ("word-pdf", "Word to PDF", "Convert DOC/DOCX to PDF."),
     ("ppt-pdf", "PowerPoint to PDF", "Convert PPT/PPTX to PDF."),
     ("excel-pdf", "Excel to PDF", "Convert XLS/XLSX to PDF."),
@@ -258,6 +260,7 @@ TOOLS_CS = {
     "pdf-ppt": ("PDF do PowerPointu", "Převeďte každou stránku PDF na snímek PowerPointu."),
     "pdf-excel": ("PDF do Excelu", "Převeďte rozpoznané tabulky do sešitu XLSX."),
     "pdf-jpg": ("PDF do JPG", "Převeďte stránky PDF na obrázky JPG."),
+    "pdf-epub": ("PDF do EPUB", "Převeďte textové PDF na přizpůsobivou e-knihu EPUB."),
     "word-pdf": ("Word do PDF", "Převeďte dokument DOC nebo DOCX do PDF."),
     "ppt-pdf": ("PowerPoint do PDF", "Převeďte prezentaci PPT nebo PPTX do PDF."),
     "excel-pdf": ("Excel do PDF", "Převeďte tabulku XLS nebo XLSX do PDF."),
@@ -297,12 +300,12 @@ CS_HOME_REPLACEMENTS = {
     '>Every PDF tool you need.</span>': '>Všechny PDF nástroje, které potřebujete.</span>',
     '>Simple and secure.</span>': '>Snadno a bezpečně.</span>',
     '>Convert, organize, compress, sign, protect, and OCR documents directly in your browser.</p>': '>Převádějte, organizujte, komprimujte, podepisujte, chraňte a rozpoznávejte dokumenty přímo v prohlížeči.</p>',
-    '>27 useful tools</span>': '>27 užitečných nástrojů</span>',
+    '>28 useful tools</span>': '>28 užitečných nástrojů</span>',
     '>Files deleted automatically</span>': '>Soubory mažeme automaticky</span>',
     '>No account for Free</span>': '>Zdarma bez účtu</span>',
     '>All PDF tools</h2>': '>Všechny PDF nástroje</h2>',
     '>Every tool is listed here. Pick one and process your document.</p>': '>Všechny nástroje najdete zde. Vyberte si a zpracujte dokument.</p>',
-    'placeholder="Search all 27 tools…"': 'placeholder="Hledat ve 27 nástrojích…"',
+    'placeholder="Search all 28 tools…"': 'placeholder="Hledat ve 28 nástrojích…"',
 }
 
 
@@ -387,6 +390,26 @@ SEO_TOOL_PAGES = {
             "why": "PDF je praktické, když má příjemce vidět stabilní dokument místo upravitelného souboru Word. Převod se hodí také při nahrávání životopisu, formuláře nebo reportu do systému, který vyžaduje právě formát PDF.",
             "notes": "Složité rozvržení Wordu může vypadat mírně odlišně podle použitých fontů, nastavení stránky a vložených objektů. Pokud je přesný vzhled zásadní, výsledné PDF před odesláním zkontrolujte.",
             "use_cases": ["Odeslání životopisu nebo reportu jako PDF", "Vytvoření verze vhodné k tisku", "Nahrání DOCX do systému, který přijímá pouze PDF"],
+        },
+    },
+    "pdf-epub": {
+        "en": {
+            "title": "PDF to EPUB Online — Convert PDF to E-book | PDFaspect",
+            "meta": "Convert a text-based PDF to EPUB online for e-readers and reading apps. Create a reflowable e-book from selectable PDF text.",
+            "h1": "Convert PDF to EPUB online",
+            "intro": "Turn a text-based PDF into a reflowable EPUB e-book that is easier to read on e-readers, phones and tablets. EPUB text adapts to screen size and reader settings instead of keeping the fixed page layout of a PDF.",
+            "why": "PDF to EPUB is useful for reports, manuals, articles and other text-heavy documents that you want to read more comfortably in an e-book app or on an e-reader. The output can be opened by many EPUB-compatible readers and apps.",
+            "notes": "The converter works best with PDFs that contain selectable text. Scanned PDFs should be OCR-processed first. Because EPUB is reflowable, complex columns, forms and page-perfect layouts will not look exactly like the original PDF.",
+            "use_cases": ["Read a PDF more comfortably on an e-reader", "Adjust font size and spacing in a reading app", "Turn text-heavy PDF content into a reflowable e-book"],
+        },
+        "cs": {
+            "title": "PDF do EPUB online — převod PDF na e-knihu | PDFaspect",
+            "meta": "Převeďte textové PDF do EPUB online pro čtečky a aplikace na e-knihy. Vytvořte přizpůsobivou e-knihu z PDF.",
+            "h1": "Převod PDF do EPUB online",
+            "intro": "Převeďte textové PDF na přizpůsobivou e-knihu EPUB, která se lépe čte na čtečkách, telefonech a tabletech. Text v EPUB se přizpůsobuje velikosti obrazovky a nastavení čtečky místo pevného rozložení PDF.",
+            "why": "PDF do EPUB se hodí u reportů, návodů, článků a dalších textových dokumentů, které chcete pohodlněji číst v aplikaci na e-knihy nebo na čtečce.",
+            "notes": "Nejlépe fungují PDF se skutečně označitelným textem. Naskenované dokumenty je vhodné nejdříve zpracovat pomocí OCR. Protože EPUB používá přizpůsobivé rozložení, složité sloupce a přesné rozvržení stránek se mohou změnit.",
+            "use_cases": ["Pohodlnější čtení PDF na čtečce", "Změna velikosti písma a řádkování", "Převod textového PDF na přizpůsobivou e-knihu"],
         },
     },
     "pdf-jpg": {
@@ -1556,7 +1579,7 @@ async def convert_tool(
     if tool not in {
         "merge", "split", "compress", "word-pdf", "rotate", "organize",
         "protect", "unlock", "sign", "watermark", "page-numbers", "pdf-ppt",
-        "pdf-excel", "pdf-jpg", "ppt-pdf", "excel-pdf", "jpg-pdf",
+        "pdf-excel", "pdf-jpg", "pdf-epub", "ppt-pdf", "excel-pdf", "jpg-pdf",
         "html-pdf", "pdfa", "repair", "scan-pdf", "ocr", "compare",
         "redact", "crop",
     }:
@@ -1590,6 +1613,7 @@ async def convert_tool(
             "pdf-ppt": "convert",
             "pdf-excel": "convert",
             "pdf-jpg": "convert",
+            "pdf-epub": "convert",
             "ppt-pdf": "convert",
             "excel-pdf": "convert",
             "html-pdf": "convert",
@@ -1706,6 +1730,8 @@ async def convert_tool(
         output = TMP / f"pdf-excel-{uuid.uuid4().hex}.xlsx"
     elif tool == "pdf-jpg":
         output = TMP / f"pdf-jpg-{uuid.uuid4().hex}.zip"
+    elif tool == "pdf-epub":
+        output = TMP / f"pdf-epub-{uuid.uuid4().hex}.epub"
     elif tool == "ppt-pdf":
         output = TMP / f"ppt-pdf-{uuid.uuid4().hex}.pdf"
     elif tool == "excel-pdf":
