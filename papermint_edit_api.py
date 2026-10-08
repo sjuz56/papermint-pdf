@@ -34,6 +34,12 @@ def _inspect_document(source: Path) -> dict:
         pages = []
         total_pixels = 0
         for number in range(len(doc)):
+            page_pixels = doc[number].rect.width * doc[number].rect.height * 1.4 * 1.4
+            if page_pixels > MAX_PAGE_PIXELS:
+                raise PdfEditError("Page too large for experimental preview")
+            total_pixels += page_pixels
+            if total_pixels > MAX_TOTAL_PREVIEW_PIXELS:
+                raise PdfEditError("PDF exceeds experimental preview rendering limit")
             occurrences = {}
             spans = []
             for raw in inspect_page(doc[number]):
@@ -50,12 +56,6 @@ def _inspect_document(source: Path) -> dict:
                 if len(spans) >= MAX_PREVIEW_SPANS:
                     raise PdfEditError("Too many text spans on a page")
                 spans.append({**span, "bbox": list(rotated), "occurrence": occurrence})
-            page_pixels = doc[number].rect.width * doc[number].rect.height * 1.4 * 1.4
-            if page_pixels > MAX_PAGE_PIXELS:
-                raise PdfEditError("Page too large for experimental preview")
-            total_pixels += page_pixels
-            if total_pixels > MAX_TOTAL_PREVIEW_PIXELS:
-                raise PdfEditError("PDF exceeds experimental preview rendering limit")
             pix = doc[number].get_pixmap(matrix=fitz.Matrix(1.4, 1.4), alpha=False)
             pages.append({
                 "image": "data:image/png;base64," + base64.b64encode(pix.tobytes("png")).decode("ascii"),
