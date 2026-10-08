@@ -22,10 +22,12 @@ textarea{display:block;box-sizing:border-box;width:100%;min-height:75px;margin:8
 <script type="module">
 const saveBtn=document.getElementById('save');
 const file=document.getElementById('file'),pages=document.getElementById('pages'),status=document.getElementById('status'),editor=document.getElementById('editor'),selection=document.getElementById('selection'),replacement=document.getElementById('replacement'),exportBtn=document.getElementById('export');
-let changes=[],chosen=null;
+let changes=[],chosen=null,spanElements=new Map();
+const changeKey=c=>[c.page,c.old_text,c.occurrence].join('\u0000');
+const refresh=()=>{for(const [key,el] of spanElements)el.style.outline=changes.some(c=>changeKey(c)===key)?'2px solid #16a085':'';exportBtn.disabled=changes.length===0;saveBtn.disabled=changes.length===0;};
 file.addEventListener('change',async()=>{
   const f=file.files[0];if(!f)return;
-  pages.replaceChildren();editor.hidden=true;changes=[];chosen=null;exportBtn.disabled=true;saveBtn.disabled=true;
+  pages.replaceChildren();editor.hidden=true;changes=[];chosen=null;spanElements.clear();refresh();
   try{
     status.textContent='Checking editable text…';
     const inspectForm=new FormData();inspectForm.append('file',f);
@@ -49,7 +51,7 @@ file.addEventListener('change',async()=>{
         div.style.left=(left/(pageInfo.width*scale)*100)+'%';div.style.top=(top/(pageInfo.height*scale)*100)+'%';
         div.style.width=(Math.max(4,width)/(pageInfo.width*scale)*100)+'%';div.style.height=(Math.max(5,height)/(pageInfo.height*scale)*100)+'%';
         const original=span.text,occurrence=span.occurrence;
-        div.title=original;
+        div.title=original;spanElements.set(changeKey({page:number-1,old_text:original,occurrence}),div);
         const pick=()=>{
           chosen={page:number-1,old_text:original,new_text:original,occurrence,element:div};
           editor.hidden=false;selection.textContent=`Page ${number}: ${original}`;
@@ -65,13 +67,13 @@ document.getElementById('apply').addEventListener('click',()=>{
  if(!chosen||!replacement.value.trim())return;
  changes=changes.filter(c=>!(c.page===chosen.page&&c.old_text===chosen.old_text&&c.occurrence===chosen.occurrence));
  if(replacement.value!==chosen.old_text)changes.push({page:chosen.page,old_text:chosen.old_text,new_text:replacement.value,occurrence:chosen.occurrence});
- chosen.element.style.outline=changes.some(c=>c.page===chosen.page&&c.old_text===chosen.old_text&&c.occurrence===chosen.occurrence)?'2px solid #16a085':'';exportBtn.disabled=changes.length===0;saveBtn.disabled=changes.length===0;
+ refresh();
  status.textContent=`${changes.length} staged change(s). Export JSON for review.`;
 });
 document.getElementById('undo').addEventListener('click',()=>{
  const last=changes.pop();if(!last)return;
- if(chosen&&chosen.page===last.page&&chosen.old_text===last.old_text&&chosen.occurrence===last.occurrence){chosen.element.style.outline='';replacement.value=chosen.old_text;}
- exportBtn.disabled=changes.length===0;saveBtn.disabled=changes.length===0;status.textContent=`${changes.length} staged change(s).`;
+ if(chosen&&changeKey(chosen)===changeKey(last)){replacement.value=chosen.old_text;}
+ refresh();status.textContent=`${changes.length} staged change(s).`;
 });
 saveBtn.addEventListener('click',async()=>{
  if(!file.files[0]||!changes.length)return;
