@@ -60,8 +60,8 @@ async def inspect_pdf_experimental(file: UploadFile = File(...)):
                     pages.append({
                         "image": "data:image/png;base64," + base64.b64encode(pix.tobytes("png")).decode("ascii"),
                         "page": number,
-                        "width": doc[number].rect.width,
-                        "height": doc[number].rect.height,
+                        "width": pix.width / 1.4,
+                        "height": pix.height / 1.4,
                         "spans": spans[:3000],
                     })
             return {"pages": pages}
