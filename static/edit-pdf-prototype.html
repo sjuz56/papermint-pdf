@@ -27,7 +27,7 @@ const changeKey=c=>[c.page,c.old_text,c.occurrence].join('\u0000');
 const refresh=()=>{for(const [key,el] of spanElements)el.style.outline=changes.some(c=>changeKey(c)===key)?'2px solid #16a085':'';exportBtn.disabled=changes.length===0;saveBtn.disabled=changes.length===0;};
 file.addEventListener('change',async()=>{
   const f=file.files[0];if(!f)return;
-  pages.replaceChildren();editor.hidden=true;changes=[];chosen=null;spanElements.clear();refresh();
+  pages.replaceChildren();editor.hidden=true;changes=[];chosen=null;targets.clear();spanElements.clear();refresh();
   try{
     status.textContent='Checking editable text…';
     const inspectForm=new FormData();inspectForm.append('file',f);
@@ -51,7 +51,8 @@ file.addEventListener('change',async()=>{
         div.style.left=(left/(pageInfo.width*scale)*100)+'%';div.style.top=(top/(pageInfo.height*scale)*100)+'%';
         div.style.width=(Math.max(4,width)/(pageInfo.width*scale)*100)+'%';div.style.height=(Math.max(5,height)/(pageInfo.height*scale)*100)+'%';
         const original=span.text,occurrence=span.occurrence;
-        div.title=original;spanElements.set(changeKey({page:number-1,old_text:original,occurrence}),div);
+        div.title=original;
+        targets.set(editKey({page:number-1,old_text:original,occurrence}),div);spanElements.set(changeKey({page:number-1,old_text:original,occurrence}),div);
         const pick=()=>{
           chosen={page:number-1,old_text:original,new_text:original,occurrence,element:div};
           editor.hidden=false;selection.textContent=`Page ${number}: ${original}`;
