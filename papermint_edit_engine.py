@@ -133,7 +133,11 @@ def replace_text(pdf_path: str, output_path: str, changes: list[TextReplacement]
         # Do not publish an output with missing replacement text or surviving
         # original text in a replaced span.
         for p, rect, new_text, span, _ in operations:
-            extracted = doc[p].get_text("text")
+            # Verify the specific edited area, not merely the whole page:
+            # another occurrence elsewhere must not mask a failed insertion.
+            nearby = fitz.Rect(rect.x0 - 2, rect.y0 - 3,
+                               rect.x1 + 2, rect.y1 + 3)
+            extracted = doc[p].get_textbox(nearby)
             if new_text not in extracted:
                 raise PdfEditError("Replacement could not be verified in the output PDF")
         doc.save(output_path, garbage=4, deflate=True)
