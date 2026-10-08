@@ -60,6 +60,33 @@ class TestPdfTextEdit(unittest.TestCase):
             self.assertEqual(text.count("Total 500"), 1)
             self.assertEqual(text.count("Total 50"), 1)
 
+    def test_source_pdf_is_not_modified(self):
+        original = Path(self.source).read_bytes()
+        replace_text(self.source, self.output, [
+            TextReplacement(0, "Invoice 1234", "Invoice 12")
+        ])
+        self.assertEqual(Path(self.source).read_bytes(), original)
+
+    def test_unrelated_page_remains_intact(self):
+        with fitz.open(self.source) as doc:
+            second = doc.new_page()
+            second.insert_text((72, 100), "Do not change", fontsize=12)
+            doc.save(self.source + ".tmp")
+        Path(self.source + ".tmp").replace(self.source)
+        replace_text(self.source, self.output, [
+            TextReplacement(0, "Invoice 1234", "Invoice 12")
+        ])
+        with fitz.open(self.output) as doc:
+            self.assertEqual(len(doc), 2)
+            self.assertIn("Do not change", doc[1].get_text())
+
+    def test_reject_out_of_range_page_without_writing_output(self):
+        with self.assertRaisesRegex(PdfEditError, "Page out of range"):
+            replace_text(self.source, self.output, [
+                TextReplacement(99, "Invoice 1234", "Invoice 12")
+            ])
+        self.assertFalse(Path(self.output).exists())
+
     def test_reject_missing_span_without_writing_output(self):
         with self.assertRaises(PdfEditError):
             replace_text(self.source, self.output, [
