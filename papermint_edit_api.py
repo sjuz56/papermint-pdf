@@ -16,6 +16,8 @@ MAX_EDIT_BYTES = 10 * 1024 * 1024
 MAX_CHANGES = 50
 MAX_PAGES = 20
 MAX_PAGE_PIXELS = 8_000_000
+MAX_TOTAL_PREVIEW_PIXELS = 24_000_000
+MAX_PREVIEW_SPANS = 3_000
 
 
 
@@ -30,6 +32,7 @@ def _inspect_document(source: Path) -> dict:
         if len(doc) > MAX_PAGES:
             raise PdfEditError("Experimental editor supports up to 20 pages")
         pages = []
+        total_pixels = 0
         for number in range(len(doc)):
             occurrences = {}
             spans = []
@@ -39,18 +42,23 @@ def _inspect_document(source: Path) -> dict:
                 occurrences[value] = occurrence + 1
                 # Text extraction uses unrotated coordinates, while the
                 # rendered preview follows the page rotation.
-                import fitz
                 rotated = fitz.Rect(span["bbox"]) * doc[number].rotation_matrix
+                if len(spans) >= MAX_PREVIEW_SPANS:
+                    raise PdfEditError("Too many text spans on a page")
                 spans.append({**span, "bbox": list(rotated), "occurrence": occurrence})
-            if doc[number].rect.width * doc[number].rect.height * 1.4 * 1.4 > MAX_PAGE_PIXELS:
+            page_pixels = doc[number].rect.width * doc[number].rect.height * 1.4 * 1.4
+            if page_pixels > MAX_PAGE_PIXELS:
                 raise PdfEditError("Page too large for experimental preview")
+            total_pixels += page_pixels
+            if total_pixels > MAX_TOTAL_PREVIEW_PIXELS:
+                raise PdfEditError("PDF exceeds experimental preview rendering limit")
             pix = doc[number].get_pixmap(matrix=fitz.Matrix(1.4, 1.4), alpha=False)
             pages.append({
                 "image": "data:image/png;base64," + base64.b64encode(pix.tobytes("png")).decode("ascii"),
                 "page": number,
                 "width": pix.width / 1.4,
                 "height": pix.height / 1.4,
-                "spans": spans[:3000],
+                "spans": spans,
             })
     return {"pages": pages}
 
