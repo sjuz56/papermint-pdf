@@ -1,5 +1,6 @@
 """Opt-in experimental PDF text edit endpoint. Disabled unless explicitly enabled."""
 import json
+import base64
 import os
 import tempfile
 from pathlib import Path
@@ -40,8 +41,8 @@ async def inspect_pdf_experimental(file: UploadFile = File(...)):
             with fitz.open(source) as doc:
                 if doc.needs_pass:
                     raise PdfEditError("Password-protected PDF is unsupported")
-                if len(doc) > 100:
-                    raise PdfEditError("Maximum 100 pages")
+                if len(doc) > 20:
+                    raise PdfEditError("Experimental editor supports up to 20 pages")
                 pages = []
                 for number in range(len(doc)):
                     occurrences = {}
@@ -51,7 +52,9 @@ async def inspect_pdf_experimental(file: UploadFile = File(...)):
                         occurrence = occurrences.get(value, 0)
                         occurrences[value] = occurrence + 1
                         spans.append({**span, "occurrence": occurrence})
+                    pix = doc[number].get_pixmap(matrix=fitz.Matrix(1.4, 1.4), alpha=False)
                     pages.append({
+                        "image": "data:image/png;base64," + base64.b64encode(pix.tobytes("png")).decode("ascii"),
                         "page": number,
                         "width": doc[number].rect.width,
                         "height": doc[number].rect.height,
