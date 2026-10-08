@@ -148,6 +148,28 @@ class TestPdfTextEdit(unittest.TestCase):
             ])
         self.assertFalse(Path(self.output).exists())
 
+    def test_original_pdf_is_not_modified(self):
+        before = Path(self.source).read_bytes()
+        replace_text(self.source, self.output, [
+            TextReplacement(0, "Invoice 1234", "Invoice 12")
+        ])
+        self.assertEqual(Path(self.source).read_bytes(), before)
+
+    def test_replaced_text_is_not_extractable(self):
+        replace_text(self.source, self.output, [
+            TextReplacement(0, "Invoice 1234", "Invoice 12")
+        ])
+        with fitz.open(self.output) as doc:
+            self.assertEqual(doc[0].search_for("Invoice 1234"), [])
+            self.assertTrue(doc[0].search_for("Invoice 12"))
+
+    def test_reject_out_of_range_page_without_output(self):
+        with self.assertRaisesRegex(PdfEditError, "Page out of range"):
+            replace_text(self.source, self.output, [
+                TextReplacement(3, "Invoice 1234", "Invoice 12")
+            ])
+        self.assertFalse(Path(self.output).exists())
+
     def test_reject_overwriting_original(self):
         with self.assertRaises(PdfEditError):
             replace_text(self.source, self.source, [
