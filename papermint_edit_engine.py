@@ -57,7 +57,8 @@ def replace_text(pdf_path: str, output_path: str, changes: list[TextReplacement]
         if doc.needs_pass:
             raise PdfEditError("Password-protected PDF is unsupported")
         operations = []
-        page_spans = {number: inspect_page(doc[number]) for number in range(len(doc))}
+        # Inspect only pages being edited; large PDFs may contain many unrelated pages.
+        page_spans = {}
         for change in changes:
             if type(change.page) is not int or type(change.occurrence) is not int:
                 raise PdfEditError("Page and occurrence must be integers")
@@ -67,6 +68,8 @@ def replace_text(pdf_path: str, output_path: str, changes: list[TextReplacement]
                 raise PdfEditError("Replacement text must be strings")
             if not change.old_text or not change.new_text.strip():
                 raise PdfEditError("Both old and new text must be nonempty")
+            if change.page not in page_spans:
+                page_spans[change.page] = inspect_page(doc[change.page])
             matches = [s for s in page_spans[change.page]
                        if s["text"] == change.old_text]
             if change.occurrence < 0 or change.occurrence >= len(matches):
