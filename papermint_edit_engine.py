@@ -44,7 +44,7 @@ def inspect_text(pdf_path: str, page_number: int) -> list[dict]:
         return spans
 
 
-def replace_text(pdf_path: str, output_path: str, changes: list[TextReplacement], font_path: str | None = None) -> dict:
+def replace_text(pdf_path: str, output_path: str, changes: list[TextReplacement]) -> dict:
     """Replace whole selectable spans; fail safely on overflow.
 
     This prototype does not support replacing arbitrary substrings or scanned PDFs.
@@ -53,10 +53,6 @@ def replace_text(pdf_path: str, output_path: str, changes: list[TextReplacement]
         raise PdfEditError("No changes supplied")
     if Path(pdf_path).resolve() == Path(output_path).resolve():
         raise PdfEditError("Output must differ from input")
-    if font_path is not None and not Path(font_path).is_file():
-        raise PdfEditError("Font file not found")
-    if font_path is None and any(ord(ch) > 127 for change in changes for ch in change.new_text):
-        raise PdfEditError("Non-ASCII replacement requires a Unicode font_path")
     with fitz.open(pdf_path) as doc:
         if doc.needs_pass:
             raise PdfEditError("Password-protected PDF is unsupported")
@@ -82,13 +78,13 @@ def replace_text(pdf_path: str, output_path: str, changes: list[TextReplacement]
         # supports Unicode including Czech characters; the default Helvetica
         # remains suitable only for its supported WinAnsi character set.
         for p, rect, new_text, span, font_file in operations:
-            if "\\n" in new_text or "\\r" in new_text:
+            if "\n" in new_text or "\r" in new_text:
                 raise PdfEditError("Multiline edits are not supported yet")
             if font_file:
-                font_path = Path(font_file)
-                if not font_path.is_file() or font_path.suffix.lower() not in {".ttf", ".otf"}:
+                selected_font_path = Path(font_file)
+                if not selected_font_path.is_file() or selected_font_path.suffix.lower() not in {".ttf", ".otf"}:
                     raise PdfEditError("Provide an existing TTF or OTF font file")
-                font = fitz.Font(fontfile=str(font_path))
+                font = fitz.Font(fontfile=str(selected_font_path))
             else:
                 try:
                     new_text.encode("cp1252")
