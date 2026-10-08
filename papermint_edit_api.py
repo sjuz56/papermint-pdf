@@ -26,6 +26,13 @@ async def edit_pdf_experimental(file: UploadFile = File(...), changes: str = For
         if not isinstance(parsed, list) or not 1 <= len(parsed) <= MAX_CHANGES:
             raise ValueError("Provide 1 to 50 changes")
         edits = []
+        # Only the server chooses a Unicode font. Never accept filesystem paths
+        # from uploaded JSON.
+        unicode_font = next((p for p in (
+            Path(os.getenv("PAPERMINT_EDIT_UNICODE_FONT", "")) if os.getenv("PAPERMINT_EDIT_UNICODE_FONT") else None,
+            Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
+            Path("/usr/share/fonts/truetype/liberation2/LiberationSans-Regular.ttf"),
+        ) if p is not None and p.is_file()), None)
         for item in parsed:
             if not isinstance(item, dict) or set(item) != {"page", "old_text", "new_text", "occurrence"}:
                 raise ValueError("Invalid change format")
@@ -33,7 +40,12 @@ async def edit_pdf_experimental(file: UploadFile = File(...), changes: str = For
                 raise ValueError("Page and occurrence must be integers")
             if not all(isinstance(item[k], str) and len(item[k]) <= 2000 for k in ("old_text", "new_text")):
                 raise ValueError("Invalid text")
-            edits.append(TextReplacement(**item))
+            if any(ord(char) > 127 for char in item["new_text"]):
+                if unicode_font is None:
+                    raise ValueError("Unicode font is not configured on this server")
+                edits.append(TextReplacement(**item, font_file=str(unicode_font)))
+            else:
+                edits.append(TextReplacement(**item))
     except (ValueError, TypeError, KeyError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     with tempfile.TemporaryDirectory(prefix="pdfaspect-edit-") as folder:
