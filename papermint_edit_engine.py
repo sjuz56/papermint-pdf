@@ -141,6 +141,18 @@ def replace_text(pdf_path: str, output_path: str, changes: list[TextReplacement]
             if new_text not in extracted:
                 raise PdfEditError("Replacement could not be verified in the output PDF")
         doc.save(output_path, garbage=4, deflate=True)
+        # Validate the bytes that will actually be returned, not just the
+        # mutable in-memory document. A corrupt or incomplete save must fail.
+        try:
+            with fitz.open(output_path) as saved:
+                for p, rect, new_text, span, _ in operations:
+                    nearby = fitz.Rect(rect.x0 - 2, rect.y0 - 3,
+                                       rect.x1 + 2, rect.y1 + 3)
+                    if new_text not in saved[p].get_textbox(nearby):
+                        raise PdfEditError("Saved PDF does not contain the replacement")
+        except Exception:
+            Path(output_path).unlink(missing_ok=True)
+            raise
         return {"replacements": len(operations), "output": output_path}
 
 
