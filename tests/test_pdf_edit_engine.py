@@ -57,8 +57,9 @@ class TestPdfTextEdit(unittest.TestCase):
         ])
         with fitz.open(self.output) as doc:
             text = doc[0].get_text()
-            self.assertEqual(text.count("Total 500"), 1)
-            self.assertEqual(text.count("Total 50"), 1)
+            lines = text.splitlines()
+            self.assertEqual(lines.count("Total 500"), 1)
+            self.assertEqual(lines.count("Total 50"), 1)
 
     def test_source_pdf_is_not_modified(self):
         original = Path(self.source).read_bytes()
