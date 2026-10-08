@@ -185,6 +185,14 @@ class TestPdfTextEdit(unittest.TestCase):
             ])
         self.assertFalse(Path(self.output).exists())
 
+    def test_replacement_is_searchable_after_save(self):
+        replace_text(self.source, self.output, [
+            TextReplacement(0, "Invoice 1234", "Invoice 12")
+        ])
+        with fitz.open(self.output) as doc:
+            self.assertTrue(doc[0].search_for("Invoice 12"))
+            self.assertFalse(doc[0].search_for("Invoice 1234"))
+
     def test_reject_overwriting_original(self):
         with self.assertRaises(PdfEditError):
             replace_text(self.source, self.source, [
