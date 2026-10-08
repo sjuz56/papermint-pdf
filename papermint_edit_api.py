@@ -14,6 +14,8 @@ from papermint_edit_engine import PdfEditError, TextReplacement, replace_text, i
 router = APIRouter()
 MAX_EDIT_BYTES = 10 * 1024 * 1024
 MAX_CHANGES = 50
+MAX_PAGES = 20
+MAX_PAGE_PIXELS = 8_000_000
 
 
 
@@ -41,7 +43,7 @@ async def inspect_pdf_experimental(file: UploadFile = File(...)):
             with fitz.open(source) as doc:
                 if doc.needs_pass:
                     raise PdfEditError("Password-protected PDF is unsupported")
-                if len(doc) > 20:
+                if len(doc) > MAX_PAGES:
                     raise PdfEditError("Experimental editor supports up to 20 pages")
                 pages = []
                 for number in range(len(doc)):
@@ -56,6 +58,8 @@ async def inspect_pdf_experimental(file: UploadFile = File(...)):
                         import fitz
                         rotated = fitz.Rect(span["bbox"]) * doc[number].rotation_matrix
                         spans.append({**span, "bbox": list(rotated), "occurrence": occurrence})
+                    if doc[number].rect.width * doc[number].rect.height * 1.4 * 1.4 > MAX_PAGE_PIXELS:
+                        raise PdfEditError("Page too large for experimental preview")
                     pix = doc[number].get_pixmap(matrix=fitz.Matrix(1.4, 1.4), alpha=False)
                     pages.append({
                         "image": "data:image/png;base64," + base64.b64encode(pix.tobytes("png")).decode("ascii"),
@@ -119,6 +123,10 @@ async def edit_pdf_experimental(file: UploadFile = File(...), changes: str = For
         if total < 5 or header != b"%PDF-":
             raise HTTPException(status_code=400, detail="Invalid PDF header")
         try:
+            import fitz
+            with fitz.open(source) as doc:
+                if len(doc) > MAX_PAGES:
+                    raise PdfEditError("Experimental editor supports up to 20 pages")
             await run_in_threadpool(replace_text, str(source), str(output), edits)
         except (PdfEditError, ValueError) as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
