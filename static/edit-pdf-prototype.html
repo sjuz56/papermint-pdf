@@ -38,7 +38,7 @@ file.addEventListener('change',async()=>{
       const canvas=document.createElement('canvas');canvas.width=Math.ceil(viewport.width);canvas.height=Math.ceil(viewport.height);
       wrapper.append(canvas);pages.append(wrapper);
       await page.render({canvasContext:canvas.getContext('2d'),viewport}).promise;
-      const text=await page.getTextContent();let index=0;
+      const text=await page.getTextContent();const occurrenceCounts=new Map();
       for(const item of text.items){
         if(!item.str?.trim())continue;
         const tx=pdfjsLib.Util.transform(viewport.transform,item.transform);
@@ -47,12 +47,13 @@ file.addEventListener('change',async()=>{
         div.setAttribute('role','button');div.setAttribute('aria-label','Edit '+item.str);
         div.style.left=tx[4]+'px';div.style.top=(tx[5]-fontHeight)+'px';
         div.style.width=Math.max(4,item.width*viewport.scale)+'px';div.style.height=Math.max(5,fontHeight)+'px';
-        const original=item.str,occurrence=index++;
+        const original=item.str,occurrence=occurrenceCounts.get(original)||0;
+        occurrenceCounts.set(original,occurrence+1);
         div.title=original;
         const pick=()=>{
           chosen={page:number-1,old_text:original,new_text:original,occurrence,element:div};
           editor.hidden=false;selection.textContent=`Page ${number}: ${original}`;
-          replacement.value=original;replacement.focus();
+          replacement.value=changes.find(c=>c.page===number-1&&c.old_text===original&&c.occurrence===occurrence)?.new_text??original;replacement.focus();
         };
         div.addEventListener('click',pick);div.addEventListener('keydown',e=>{if(e.key==='Enter')pick()});
         wrapper.append(div);
@@ -62,13 +63,14 @@ file.addEventListener('change',async()=>{
 });
 document.getElementById('apply').addEventListener('click',()=>{
  if(!chosen||!replacement.value.trim())return;
- changes=changes.filter(c=>!(c.page===chosen.page&&c.occurrence===chosen.occurrence));
- changes.push({page:chosen.page,old_text:chosen.old_text,new_text:replacement.value,occurrence:chosen.occurrence});
- chosen.element.style.outline='2px solid #16a085';exportBtn.disabled=false;
+ changes=changes.filter(c=>!(c.page===chosen.page&&c.old_text===chosen.old_text&&c.occurrence===chosen.occurrence));
+ if(replacement.value!==chosen.old_text)changes.push({page:chosen.page,old_text:chosen.old_text,new_text:replacement.value,occurrence:chosen.occurrence});
+ chosen.element.style.outline=changes.some(c=>c.page===chosen.page&&c.old_text===chosen.old_text&&c.occurrence===chosen.occurrence)?'2px solid #16a085':'';exportBtn.disabled=changes.length===0;
  status.textContent=`${changes.length} staged change(s). Export JSON for review.`;
 });
 document.getElementById('undo').addEventListener('click',()=>{
  const last=changes.pop();if(!last)return;
+ if(chosen&&chosen.page===last.page&&chosen.old_text===last.old_text&&chosen.occurrence===last.occurrence){chosen.element.style.outline='';replacement.value=chosen.old_text;}
  exportBtn.disabled=changes.length===0;status.textContent=`${changes.length} staged change(s).`;
 });
 exportBtn.addEventListener('click',()=>{
