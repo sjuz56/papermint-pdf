@@ -117,7 +117,7 @@ class TestPdfTextEdit(unittest.TestCase):
     def test_reject_multiline_edit(self):
         with self.assertRaisesRegex(PdfEditError, "Multiline"):
             replace_text(self.source, self.output, [
-                TextReplacement(0, "Invoice 1234", "Line\\nnext")
+                TextReplacement(0, "Invoice 1234", "Line\nnext")
             ])
         self.assertFalse(Path(self.output).exists())
 
