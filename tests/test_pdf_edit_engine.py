@@ -180,7 +180,7 @@ class TestPdfTextEdit(unittest.TestCase):
     def test_reject_control_characters_without_output(self):
         with self.assertRaisesRegex(PdfEditError, "Control characters"):
             replace_text(self.source, self.output, [
-                TextReplacement(0, "Invoice 1234", "Invoice\\t12")
+                TextReplacement(0, "Invoice 1234", "Invoice\t12")
             ])
         self.assertFalse(Path(self.output).exists())
 
