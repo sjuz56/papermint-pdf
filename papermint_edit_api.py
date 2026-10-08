@@ -19,6 +19,41 @@ MAX_PAGE_PIXELS = 8_000_000
 
 
 
+
+
+def _inspect_document(source: Path) -> dict:
+    """Render PDF previews outside the async request event loop."""
+    import fitz
+    with fitz.open(source) as doc:
+        if doc.needs_pass:
+            raise PdfEditError("Password-protected PDF is unsupported")
+        if len(doc) > MAX_PAGES:
+            raise PdfEditError("Experimental editor supports up to 20 pages")
+        pages = []
+        for number in range(len(doc)):
+            occurrences = {}
+            spans = []
+            for span in inspect_text(str(source), number):
+                value = span["text"]
+                occurrence = occurrences.get(value, 0)
+                occurrences[value] = occurrence + 1
+                # Text extraction uses unrotated coordinates, while the
+                # rendered preview follows the page rotation.
+                import fitz
+                rotated = fitz.Rect(span["bbox"]) * doc[number].rotation_matrix
+                spans.append({**span, "bbox": list(rotated), "occurrence": occurrence})
+            if doc[number].rect.width * doc[number].rect.height * 1.4 * 1.4 > MAX_PAGE_PIXELS:
+                raise PdfEditError("Page too large for experimental preview")
+            pix = doc[number].get_pixmap(matrix=fitz.Matrix(1.4, 1.4), alpha=False)
+            pages.append({
+                "image": "data:image/png;base64," + base64.b64encode(pix.tobytes("png")).decode("ascii"),
+                "page": number,
+                "width": pix.width / 1.4,
+                "height": pix.height / 1.4,
+                "spans": spans[:3000],
+            })
+    return {"pages": pages}
+
 @router.post("/api/experimental/inspect-pdf")
 async def inspect_pdf_experimental(file: UploadFile = File(...)):
     """Return server-authoritative selectable spans for the browser editor."""
@@ -39,36 +74,7 @@ async def inspect_pdf_experimental(file: UploadFile = File(...)):
             if stream.read(5) != b"%PDF-":
                 raise HTTPException(status_code=400, detail="Invalid PDF header")
         try:
-            import fitz
-            with fitz.open(source) as doc:
-                if doc.needs_pass:
-                    raise PdfEditError("Password-protected PDF is unsupported")
-                if len(doc) > MAX_PAGES:
-                    raise PdfEditError("Experimental editor supports up to 20 pages")
-                pages = []
-                for number in range(len(doc)):
-                    occurrences = {}
-                    spans = []
-                    for span in inspect_text(str(source), number):
-                        value = span["text"]
-                        occurrence = occurrences.get(value, 0)
-                        occurrences[value] = occurrence + 1
-                        # Text extraction uses unrotated coordinates, while the
-                        # rendered preview follows the page rotation.
-                        import fitz
-                        rotated = fitz.Rect(span["bbox"]) * doc[number].rotation_matrix
-                        spans.append({**span, "bbox": list(rotated), "occurrence": occurrence})
-                    if doc[number].rect.width * doc[number].rect.height * 1.4 * 1.4 > MAX_PAGE_PIXELS:
-                        raise PdfEditError("Page too large for experimental preview")
-                    pix = doc[number].get_pixmap(matrix=fitz.Matrix(1.4, 1.4), alpha=False)
-                    pages.append({
-                        "image": "data:image/png;base64," + base64.b64encode(pix.tobytes("png")).decode("ascii"),
-                        "page": number,
-                        "width": pix.width / 1.4,
-                        "height": pix.height / 1.4,
-                        "spans": spans[:3000],
-                    })
-            return {"pages": pages}
+            return await run_in_threadpool(_inspect_document, source)
         except (PdfEditError, ValueError) as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         except Exception as exc:
