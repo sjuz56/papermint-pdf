@@ -61,6 +61,20 @@ class TestPdfTextEdit(unittest.TestCase):
             self.assertEqual(lines.count("Total 500"), 1)
             self.assertEqual(lines.count("Total 50"), 1)
 
+    def test_replacement_matches_correct_duplicate_location(self):
+        with fitz.open(self.source) as doc:
+            doc[0].insert_text((72, 180), "Total 500", fontsize=12)
+            doc.save(self.source + ".tmp")
+        Path(self.source + ".tmp").replace(self.source)
+        replace_text(self.source, self.output, [
+            TextReplacement(0, "Total 500", "Total 50", occurrence=1)
+        ])
+        with fitz.open(self.output) as doc:
+            first = doc[0].get_textbox(fitz.Rect(65, 125, 180, 150))
+            second = doc[0].get_textbox(fitz.Rect(65, 165, 180, 190))
+            self.assertIn("Total 500", first)
+            self.assertIn("Total 50", second)
+
     def test_source_pdf_is_not_modified(self):
         original = Path(self.source).read_bytes()
         replace_text(self.source, self.output, [
