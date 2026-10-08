@@ -28,12 +28,13 @@ const refresh=()=>{for(const [key,el] of spanElements)el.style.outline=changes.s
 file.addEventListener('change',async()=>{
   const f=file.files[0];if(!f)return;
   const currentRequest=++requestId;loadedFile=null;
+  if(f.size>10*1024*1024){pages.replaceChildren();editor.hidden=true;changes=[];chosen=null;spanElements.clear();refresh();status.textContent='PDF exceeds the 10 MB editor limit.';return;}
   pages.replaceChildren();editor.hidden=true;changes=[];chosen=null;spanElements.clear();refresh();
   try{
     status.textContent='Checking editable text…';
     const inspectForm=new FormData();inspectForm.append('file',f);
     const inspectResponse=await fetch('/api/experimental/inspect-pdf',{method:'POST',body:inspectForm});
-    if(!inspectResponse.ok){let detail='HTTP '+inspectResponse.status;try{detail=(await inspectResponse.json()).detail||detail}catch{}throw new Error('Text inspection unavailable: '+detail)}
+    if(!inspectResponse.ok){let detail='HTTP '+inspectResponse.status;try{detail=(await inspectResponse.json()).detail||detail}catch{}throw new Error(inspectResponse.status===404?'PDF editor is not enabled on this server.':'Text inspection unavailable: '+detail)}
     const inspected=await inspectResponse.json();
     if(currentRequest!==requestId)return;
     loadedFile=f;refresh();
