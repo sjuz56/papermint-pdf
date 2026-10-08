@@ -128,5 +128,5 @@ def inspect_page(page) -> list[dict]:
     spans = []
     for block in page.get_text("dict")["blocks"]:
         for line in block.get("lines", []):
-            spans.extend(line["spans"])
+            spans.extend(span for span in line["spans"] if span["text"].strip())
     return spans
