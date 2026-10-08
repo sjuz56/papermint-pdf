@@ -166,6 +166,10 @@ PDF_WORD_OUTPUTS.mkdir(exist_ok=True)
 
 app = FastAPI(title="PDFaspect PDF Toolbox")
 
+# Experimental editor is opt-in; the endpoint returns 404 by default.
+from papermint_edit_api import router as experimental_edit_router
+app.include_router(experimental_edit_router)
+
 _RATE_LIMITS: dict[str, deque[float]] = defaultdict(deque)
 _RATE_LIMIT_LOCK = threading.Lock()
 
