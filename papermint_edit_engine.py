@@ -57,12 +57,13 @@ def replace_text(pdf_path: str, output_path: str, changes: list[TextReplacement]
         if doc.needs_pass:
             raise PdfEditError("Password-protected PDF is unsupported")
         operations = []
+        page_spans = {number: inspect_page(doc[number]) for number in range(len(doc))}
         for change in changes:
             if not 0 <= change.page < len(doc):
                 raise PdfEditError("Page out of range")
             if not change.old_text or not change.new_text.strip():
                 raise PdfEditError("Both old and new text must be nonempty")
-            matches = [s for s in inspect_page(doc[change.page])
+            matches = [s for s in page_spans[change.page]
                        if s["text"] == change.old_text]
             if change.occurrence < 0 or change.occurrence >= len(matches):
                 raise PdfEditError("Exact selectable text span not found")
@@ -72,7 +73,7 @@ def replace_text(pdf_path: str, output_path: str, changes: list[TextReplacement]
         # Reject edits whose redaction could erase neighbouring text spans.
         # PyMuPDF removes characters that intersect a redaction rectangle.
         for p, rect, _, span, _ in operations:
-            for neighbour in inspect_page(doc[p]):
+            for neighbour in page_spans[p]:
                 if neighbour is span:
                     continue
                 if fitz.Rect(neighbour["bbox"]).intersects(rect):
