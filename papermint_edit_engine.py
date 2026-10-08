@@ -59,8 +59,12 @@ def replace_text(pdf_path: str, output_path: str, changes: list[TextReplacement]
         operations = []
         page_spans = {number: inspect_page(doc[number]) for number in range(len(doc))}
         for change in changes:
+            if type(change.page) is not int or type(change.occurrence) is not int:
+                raise PdfEditError("Page and occurrence must be integers")
             if not 0 <= change.page < len(doc):
                 raise PdfEditError("Page out of range")
+            if not isinstance(change.old_text, str) or not isinstance(change.new_text, str):
+                raise PdfEditError("Replacement text must be strings")
             if not change.old_text or not change.new_text.strip():
                 raise PdfEditError("Both old and new text must be nonempty")
             matches = [s for s in page_spans[change.page]
