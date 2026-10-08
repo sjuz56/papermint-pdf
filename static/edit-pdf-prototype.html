@@ -18,7 +18,7 @@ textarea{display:block;box-sizing:border-box;width:100%;min-height:75px;margin:8
 </head>
 <body>
 <header><strong>🐙 PDFaspect — Edit PDF</strong><label class="upload">Open PDF <input type="file" id="file" accept="application/pdf" hidden></label><button id="export" disabled>Export changes JSON</button><button id="save" disabled>Download edited PDF (experimental)</button></header>
-<main><section id="editor" hidden><b id="selection"></b><textarea id="replacement" aria-label="Replacement text"></textarea><button id="apply">Stage change</button> <button id="undo">Undo last</button><p><small>This is a preview prototype. Exported changes are NOT a modified PDF. PDF saving will be connected to a validated server endpoint later.</small></p></section><div id="status">Choose a PDF to preview and select its text.</div><div id="pages"></div></main>
+<main><section id="editor" hidden><b id="selection"></b><textarea id="replacement" aria-label="Replacement text"></textarea><button id="apply">Stage change</button> <button id="undo">Undo last</button><p><small>Experimental editor. PDF saving requires the server feature flag and may reject complex layouts.</small></p></section><div id="status">Choose a PDF to preview and select its text.</div><div id="pages"></div></main>
 <script type="module">
 import * as pdfjsLib from 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.min.mjs';
 pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.worker.min.mjs';
@@ -31,6 +31,11 @@ file.addEventListener('change',async()=>{
   try{
     const data=new Uint8Array(await f.arrayBuffer());
     const pdf=await pdfjsLib.getDocument({data}).promise;
+    status.textContent='Checking editable text…';
+    const inspectForm=new FormData();inspectForm.append('file',f);
+    const inspectResponse=await fetch('/api/experimental/inspect-pdf',{method:'POST',body:inspectForm});
+    if(!inspectResponse.ok){let detail='HTTP '+inspectResponse.status;try{detail=(await inspectResponse.json()).detail||detail}catch{}throw new Error('Text inspection unavailable: '+detail)}
+    const inspected=await inspectResponse.json();
     status.textContent=`Loaded ${pdf.numPages} pages. Click highlighted text to edit.`;
     for(let number=1;number<=pdf.numPages;number++){
       const page=await pdf.getPage(number),viewport=page.getViewport({scale:1.4});
@@ -39,17 +44,17 @@ file.addEventListener('change',async()=>{
       const canvas=document.createElement('canvas');canvas.width=Math.ceil(viewport.width);canvas.height=Math.ceil(viewport.height);
       wrapper.append(canvas);pages.append(wrapper);
       await page.render({canvasContext:canvas.getContext('2d'),viewport}).promise;
-      const text=await page.getTextContent();const occurrenceCounts=new Map();
-      for(const item of text.items){
-        if(!item.str?.trim())continue;
-        const tx=pdfjsLib.Util.transform(viewport.transform,item.transform);
-        const fontHeight=Math.hypot(tx[2],tx[3]);
+      const pageInfo=inspected.pages[number-1];
+      if(!pageInfo)throw new Error('Missing server text data');
+      for(const span of pageInfo.spans){
+        const rect=viewport.convertToViewportRectangle(span.bbox);
+        const left=Math.min(rect[0],rect[2]),top=Math.min(rect[1],rect[3]);
+        const width=Math.abs(rect[2]-rect[0]),height=Math.abs(rect[3]-rect[1]);
         const div=document.createElement('div');div.className='span';div.tabIndex=0;
-        div.setAttribute('role','button');div.setAttribute('aria-label','Edit '+item.str);
-        div.style.left=tx[4]+'px';div.style.top=(tx[5]-fontHeight)+'px';
-        div.style.width=Math.max(4,item.width*viewport.scale)+'px';div.style.height=Math.max(5,fontHeight)+'px';
-        const original=item.str,occurrence=occurrenceCounts.get(original)||0;
-        occurrenceCounts.set(original,occurrence+1);
+        div.setAttribute('role','button');div.setAttribute('aria-label','Edit '+span.text);
+        div.style.left=left+'px';div.style.top=top+'px';
+        div.style.width=Math.max(4,width)+'px';div.style.height=Math.max(5,height)+'px';
+        const original=span.text,occurrence=span.occurrence;
         div.title=original;
         const pick=()=>{
           chosen={page:number-1,old_text:original,new_text:original,occurrence,element:div};
