@@ -78,6 +78,24 @@ class TestPdfTextEdit(unittest.TestCase):
         with fitz.open(self.output) as doc:
             self.assertIn("Příjem 12", doc[0].get_text())
 
+    def test_reject_neighbouring_text_overlap(self):
+        with fitz.open(self.source) as doc:
+            doc[0].insert_text((73, 100), "OVERLAP", fontsize=12)
+            doc.save(self.source + ".tmp")
+        Path(self.source + ".tmp").replace(self.source)
+        with self.assertRaisesRegex(PdfEditError, "neighbouring text"):
+            replace_text(self.source, self.output, [
+                TextReplacement(0, "Invoice 1234", "Invoice 12")
+            ])
+        self.assertFalse(Path(self.output).exists())
+
+    def test_reject_multiline_edit(self):
+        with self.assertRaisesRegex(PdfEditError, "Multiline"):
+            replace_text(self.source, self.output, [
+                TextReplacement(0, "Invoice 1234", "Line\\nnext")
+            ])
+        self.assertFalse(Path(self.output).exists())
+
     def test_reject_overwriting_original(self):
         with self.assertRaises(PdfEditError):
             replace_text(self.source, self.source, [
