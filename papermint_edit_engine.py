@@ -69,6 +69,14 @@ def replace_text(pdf_path: str, output_path: str, changes: list[TextReplacement]
             span = matches[change.occurrence]
             rect = fitz.Rect(span["bbox"])
             operations.append((change.page, rect, change.new_text, span, change.font_file))
+        # Reject edits whose redaction could erase neighbouring text spans.
+        # PyMuPDF removes characters that intersect a redaction rectangle.
+        for p, rect, _, span, _ in operations:
+            for neighbour in inspect_page(doc[p]):
+                if neighbour is span:
+                    continue
+                if fitz.Rect(neighbour["bbox"]).intersects(rect):
+                    raise PdfEditError("Edit box overlaps neighbouring text")
         # Disallow overlapping edits before mutating any page.
         for i, (p, rect, _, _, _) in enumerate(operations):
             if any(p == p2 and rect.intersects(rect2)
@@ -104,7 +112,8 @@ def replace_text(pdf_path: str, output_path: str, changes: list[TextReplacement]
             if font_file:
                 # Register embedded font for this page. This does not guarantee
                 # an exact match with the original PDF's subset font.
-                fontname = "editfont_" + str(abs(hash(str(Path(font_file).resolve()))))
+                import hashlib
+                fontname = "editfont_" + hashlib.sha256(str(Path(font_file).resolve()).encode()).hexdigest()[:12]
                 doc[p].insert_font(fontname=fontname, fontfile=font_file)
             else:
                 fontname = "helv"
