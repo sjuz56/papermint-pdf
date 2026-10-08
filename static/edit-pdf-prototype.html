@@ -9,7 +9,7 @@ header{padding:16px 24px;background:#102b4b;color:white;display:flex;gap:20px;al
 header strong{font-size:21px}button,.upload{border:0;border-radius:8px;background:#f78d39;color:#152b43;padding:10px 14px;font-weight:700;cursor:pointer}
 button:disabled{opacity:.4;cursor:not-allowed}main{max-width:1000px;margin:20px auto;padding:0 16px}
 #pages{display:grid;gap:20px;justify-items:center}.page{position:relative;box-shadow:0 5px 24px #17304b33;background:white}
-.page canvas{display:block;max-width:100%}.span{position:absolute;cursor:text;outline:1px solid transparent;color:transparent;white-space:pre;overflow:hidden}
+.page img{display:block;max-width:100%}.span{position:absolute;cursor:text;outline:1px solid transparent;color:transparent;white-space:pre;overflow:hidden}
 .span:hover,.span:focus{outline:2px solid #fa8a2d;background:#fba65033}
 #editor{position:sticky;top:0;z-index:3;background:white;padding:14px;box-shadow:0 2px 12px #17304b20;border-radius:10px;margin-bottom:18px}
 textarea{display:block;box-sizing:border-box;width:100%;min-height:75px;margin:8px 0;padding:10px;font:inherit}
@@ -20,8 +20,6 @@ textarea{display:block;box-sizing:border-box;width:100%;min-height:75px;margin:8
 <header><strong>🐙 PDFaspect — Edit PDF</strong><label class="upload">Open PDF <input type="file" id="file" accept="application/pdf" hidden></label><button id="export" disabled>Export changes JSON</button><button id="save" disabled>Download edited PDF (experimental)</button></header>
 <main><section id="editor" hidden><b id="selection"></b><textarea id="replacement" aria-label="Replacement text"></textarea><button id="apply">Stage change</button> <button id="undo">Undo last</button><p><small>Experimental editor. PDF saving requires the server feature flag and may reject complex layouts.</small></p></section><div id="status">Choose a PDF to preview and select its text.</div><div id="pages"></div></main>
 <script type="module">
-import * as pdfjsLib from 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.min.mjs';
-pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.worker.min.mjs';
 const saveBtn=document.getElementById('save');
 const file=document.getElementById('file'),pages=document.getElementById('pages'),status=document.getElementById('status'),editor=document.getElementById('editor'),selection=document.getElementById('selection'),replacement=document.getElementById('replacement'),exportBtn=document.getElementById('export');
 let changes=[],chosen=null;
@@ -29,27 +27,23 @@ file.addEventListener('change',async()=>{
   const f=file.files[0];if(!f)return;
   pages.replaceChildren();editor.hidden=true;changes=[];chosen=null;exportBtn.disabled=true;saveBtn.disabled=true;
   try{
-    const data=new Uint8Array(await f.arrayBuffer());
-    const pdf=await pdfjsLib.getDocument({data}).promise;
     status.textContent='Checking editable text…';
     const inspectForm=new FormData();inspectForm.append('file',f);
     const inspectResponse=await fetch('/api/experimental/inspect-pdf',{method:'POST',body:inspectForm});
     if(!inspectResponse.ok){let detail='HTTP '+inspectResponse.status;try{detail=(await inspectResponse.json()).detail||detail}catch{}throw new Error('Text inspection unavailable: '+detail)}
     const inspected=await inspectResponse.json();
-    status.textContent=`Loaded ${pdf.numPages} pages. Click highlighted text to edit.`;
-    for(let number=1;number<=pdf.numPages;number++){
-      const page=await pdf.getPage(number),viewport=page.getViewport({scale:1.4});
+    status.textContent=`Loaded ${inspected.pages.length} pages. Click highlighted text to edit.`;
+    for(let number=1;number<=inspected.pages.length;number++){
+      const pageInfo=inspected.pages[number-1],scale=1.4;
       const wrapper=document.createElement('div');wrapper.className='page';
-      wrapper.style.width=viewport.width+'px';wrapper.style.height=viewport.height+'px';
-      const canvas=document.createElement('canvas');canvas.width=Math.ceil(viewport.width);canvas.height=Math.ceil(viewport.height);
-      wrapper.append(canvas);pages.append(wrapper);
-      await page.render({canvasContext:canvas.getContext('2d'),viewport}).promise;
-      const pageInfo=inspected.pages[number-1];
-      if(!pageInfo)throw new Error('Missing server text data');
+      wrapper.style.width=(pageInfo.width*scale)+'px';wrapper.style.height=(pageInfo.height*scale)+'px';
+      const preview=document.createElement('img');preview.src=pageInfo.image;preview.alt='PDF page '+number;
+      preview.style.display='block';preview.style.width='100%';preview.style.height='100%';
+      wrapper.append(preview);pages.append(wrapper);
       for(const span of pageInfo.spans){
-        const rect=viewport.convertToViewportRectangle(span.bbox);
-        const left=Math.min(rect[0],rect[2]),top=Math.min(rect[1],rect[3]);
-        const width=Math.abs(rect[2]-rect[0]),height=Math.abs(rect[3]-rect[1]);
+        const [x0,y0,x1,y1]=span.bbox;
+        const left=x0*scale,top=y0*scale;
+        const width=(x1-x0)*scale,height=(y1-y0)*scale;
         const div=document.createElement('div');div.className='span';div.tabIndex=0;
         div.setAttribute('role','button');div.setAttribute('aria-label','Edit '+span.text);
         div.style.left=left+'px';div.style.top=top+'px';
