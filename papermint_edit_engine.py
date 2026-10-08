@@ -129,6 +129,13 @@ def replace_text(pdf_path: str, output_path: str, changes: list[TextReplacement]
                 fontname = "helv"
             doc[p].insert_text(baseline, new_text, fontname=fontname,
                                fontsize=span["size"], color=rgb, overlay=True)
+        # Validate the generated document before returning it to the user.
+        # Do not publish an output with missing replacement text or surviving
+        # original text in a replaced span.
+        for p, rect, new_text, span, _ in operations:
+            extracted = doc[p].get_textbox(rect + (-1, -2, 2, 2))
+            if new_text not in extracted:
+                raise PdfEditError("Replacement could not be verified in the output PDF")
         doc.save(output_path, garbage=4, deflate=True)
         return {"replacements": len(operations), "output": output_path}
 
