@@ -57,6 +57,27 @@ class TestPdfTextEdit(unittest.TestCase):
             ])
         self.assertFalse(Path(self.output).exists())
 
+    def test_unicode_requires_embedded_font(self):
+        with self.assertRaises(PdfEditError):
+            replace_text(self.source, self.output, [
+                TextReplacement(0, "Invoice 1234", "Příjem 12")
+            ])
+        self.assertFalse(Path(self.output).exists())
+
+    def test_unicode_with_optional_font(self):
+        candidates = [
+            Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
+            Path("/usr/share/fonts/truetype/liberation2/LiberationSans-Regular.ttf"),
+        ]
+        font = next((p for p in candidates if p.is_file()), None)
+        if font is None:
+            self.skipTest("No Unicode TTF installed in test environment")
+        replace_text(self.source, self.output, [
+            TextReplacement(0, "Invoice 1234", "Příjem 12", font_file=str(font))
+        ])
+        with fitz.open(self.output) as doc:
+            self.assertIn("Příjem 12", doc[0].get_text())
+
     def test_reject_overwriting_original(self):
         with self.assertRaises(PdfEditError):
             replace_text(self.source, self.source, [
