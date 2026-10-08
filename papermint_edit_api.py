@@ -8,11 +8,60 @@ from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import Response
 from starlette.concurrency import run_in_threadpool
 
-from papermint_edit_engine import PdfEditError, TextReplacement, replace_text
+from papermint_edit_engine import PdfEditError, TextReplacement, replace_text, inspect_text
 
 router = APIRouter()
 MAX_EDIT_BYTES = 10 * 1024 * 1024
 MAX_CHANGES = 50
+
+
+
+@router.post("/api/experimental/inspect-pdf")
+async def inspect_pdf_experimental(file: UploadFile = File(...)):
+    """Return server-authoritative selectable spans for the browser editor."""
+    if os.getenv("PAPERMINT_ENABLE_EXPERIMENTAL_EDIT_PDF") != "1":
+        raise HTTPException(status_code=404, detail="Not available")
+    if not (file.filename or "").lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="A PDF file is required")
+    with tempfile.TemporaryDirectory(prefix="pdfaspect-inspect-") as folder:
+        source = Path(folder) / "input.pdf"
+        total = 0
+        with source.open("wb") as dest:
+            while chunk := await file.read(1024 * 1024):
+                total += len(chunk)
+                if total > MAX_EDIT_BYTES:
+                    raise HTTPException(status_code=413, detail="PDF exceeds 10 MB")
+                dest.write(chunk)
+        with source.open("rb") as stream:
+            if stream.read(5) != b"%PDF-":
+                raise HTTPException(status_code=400, detail="Invalid PDF header")
+        try:
+            import fitz
+            with fitz.open(source) as doc:
+                if doc.needs_pass:
+                    raise PdfEditError("Password-protected PDF is unsupported")
+                if len(doc) > 100:
+                    raise PdfEditError("Maximum 100 pages")
+                pages = []
+                for number in range(len(doc)):
+                    occurrences = {}
+                    spans = []
+                    for span in inspect_text(str(source), number):
+                        value = span["text"]
+                        occurrence = occurrences.get(value, 0)
+                        occurrences[value] = occurrence + 1
+                        spans.append({**span, "occurrence": occurrence})
+                    pages.append({
+                        "page": number,
+                        "width": doc[number].rect.width,
+                        "height": doc[number].rect.height,
+                        "spans": spans[:3000],
+                    })
+            return {"pages": pages}
+        except (PdfEditError, ValueError) as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except Exception as exc:
+            raise HTTPException(status_code=422, detail="PDF could not be inspected") from exc
 
 
 @router.post("/api/experimental/edit-pdf")
