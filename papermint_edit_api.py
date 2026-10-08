@@ -46,7 +46,9 @@ async def edit_pdf_experimental(file: UploadFile = File(...), changes: str = For
                 if total > MAX_EDIT_BYTES:
                     raise HTTPException(status_code=413, detail="PDF exceeds 10 MB")
                 dest.write(chunk)
-        if total < 5 or source.open("rb").read(5) != b"%PDF-":
+        with source.open("rb") as stream:
+            header = stream.read(5)
+        if total < 5 or header != b"%PDF-":
             raise HTTPException(status_code=400, detail="Invalid PDF header")
         try:
             await run_in_threadpool(replace_text, str(source), str(output), edits)
