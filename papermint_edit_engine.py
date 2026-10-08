@@ -44,7 +44,7 @@ def inspect_text(pdf_path: str, page_number: int) -> list[dict]:
         return spans
 
 
-def replace_text(pdf_path: str, output_path: str, changes: list[TextReplacement]) -> dict:
+def replace_text(pdf_path: str, output_path: str, changes: list[TextReplacement], font_path: str | None = None) -> dict:
     """Replace whole selectable spans; fail safely on overflow.
 
     This prototype does not support replacing arbitrary substrings or scanned PDFs.
@@ -53,6 +53,10 @@ def replace_text(pdf_path: str, output_path: str, changes: list[TextReplacement]
         raise PdfEditError("No changes supplied")
     if Path(pdf_path).resolve() == Path(output_path).resolve():
         raise PdfEditError("Output must differ from input")
+    if font_path is not None and not Path(font_path).is_file():
+        raise PdfEditError("Font file not found")
+    if font_path is None and any(ord(ch) > 127 for change in changes for ch in change.new_text):
+        raise PdfEditError("Non-ASCII replacement requires a Unicode font_path")
     with fitz.open(pdf_path) as doc:
         if doc.needs_pass:
             raise PdfEditError("Password-protected PDF is unsupported")
