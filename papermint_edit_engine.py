@@ -17,6 +17,7 @@ class TextReplacement:
     old_text: str
     new_text: str
     occurrence: int = 0
+    font_file: str | None = None
 
 
 class PdfEditError(ValueError):
@@ -67,29 +68,47 @@ def replace_text(pdf_path: str, output_path: str, changes: list[TextReplacement]
                 raise PdfEditError("Exact selectable text span not found")
             span = matches[change.occurrence]
             rect = fitz.Rect(span["bbox"])
-            operations.append((change.page, rect, change.new_text, span))
+            operations.append((change.page, rect, change.new_text, span, change.font_file))
         # Disallow overlapping edits before mutating any page.
-        for i, (p, rect, _, _) in enumerate(operations):
+        for i, (p, rect, _, _, _) in enumerate(operations):
             if any(p == p2 and rect.intersects(rect2)
-                   for p2, rect2, _, _ in operations[:i]):
+                   for p2, rect2, _, _, _ in operations[:i]):
                 raise PdfEditError("Overlapping edits")
-        # Preflight text fit using the PDF built-in Helvetica font.
-        for p, rect, new_text, span in operations:
-            if any(ord(ch) > 255 for ch in new_text):
-                raise PdfEditError("Unicode font embedding is required for this replacement")
-            if fitz.get_text_length(new_text, fontname="helv", fontsize=span["size"]) > rect.width + 0.5:
+        # Preflight every edit before redacting any content. A supplied TTF/OTF
+        # supports Unicode including Czech characters; the default Helvetica
+        # remains suitable only for its supported WinAnsi character set.
+        for p, rect, new_text, span, font_file in operations:
+            if "\\n" in new_text or "\\r" in new_text:
+                raise PdfEditError("Multiline edits are not supported yet")
+            if font_file:
+                font_path = Path(font_file)
+                if not font_path.is_file() or font_path.suffix.lower() not in {".ttf", ".otf"}:
+                    raise PdfEditError("Provide an existing TTF or OTF font file")
+                font = fitz.Font(fontfile=str(font_path))
+            else:
+                try:
+                    new_text.encode("cp1252")
+                except UnicodeEncodeError as exc:
+                    raise PdfEditError("Supply a Unicode font_file for this text") from exc
+                font = fitz.Font("helv")
+            if font.text_length(new_text, fontsize=span["size"]) > rect.width + 0.5:
                 raise PdfEditError("Replacement is wider than original text box")
-        for p, rect, _, _ in operations:
+        for p, rect, _, _, _ in operations:
             doc[p].add_redact_annot(rect, fill=(1, 1, 1), cross_out=False)
         for p in {op[0] for op in operations}:
             doc[p].apply_redactions(images=0, graphics=0, text=0)
-        for p, rect, new_text, span in operations:
+        for p, rect, new_text, span, font_file in operations:
             c = span["color"]
             rgb = ((c >> 16 & 255) / 255, (c >> 8 & 255) / 255, (c & 255) / 255)
-            # Baseline inferred from original span geometry; use insert_text rather
-            # than textbox to preserve its approximate original placement.
             baseline = fitz.Point(rect.x0, rect.y1 - max(0.5, span["size"] * 0.18))
-            doc[p].insert_text(baseline, new_text, fontname="helv",
+            if font_file:
+                # Register embedded font for this page. This does not guarantee
+                # an exact match with the original PDF's subset font.
+                fontname = "editfont_" + str(abs(hash(str(Path(font_file).resolve()))))
+                doc[p].insert_font(fontname=fontname, fontfile=font_file)
+            else:
+                fontname = "helv"
+            doc[p].insert_text(baseline, new_text, fontname=fontname,
                                fontsize=span["size"], color=rgb, overlay=True)
         doc.save(output_path, garbage=4, deflate=True)
         return {"replacements": len(operations), "output": output_path}
