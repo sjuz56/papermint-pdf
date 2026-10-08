@@ -22,9 +22,9 @@ textarea{display:block;box-sizing:border-box;width:100%;min-height:75px;margin:8
 <script type="module">
 const saveBtn=document.getElementById('save');
 const file=document.getElementById('file'),pages=document.getElementById('pages'),status=document.getElementById('status'),editor=document.getElementById('editor'),selection=document.getElementById('selection'),replacement=document.getElementById('replacement'),exportBtn=document.getElementById('export');
-let changes=[],chosen=null,spanElements=new Map(),loadedFile=null,requestId=0;
+let changes=[],chosen=null,spanElements=new Map(),loadedFile=null,requestId=0,saving=false;
 const changeKey=c=>[c.page,c.old_text,c.occurrence].join('\u0000');
-const refresh=()=>{for(const [key,el] of spanElements)el.style.outline=changes.some(c=>changeKey(c)===key)?'2px solid #16a085':'';exportBtn.disabled=changes.length===0;saveBtn.disabled=changes.length===0;};
+const refresh=()=>{for(const [key,el] of spanElements)el.style.outline=changes.some(c=>changeKey(c)===key)?'2px solid #16a085':'';exportBtn.disabled=changes.length===0;saveBtn.disabled=saving||!loadedFile||changes.length===0;};
 file.addEventListener('change',async()=>{
   const f=file.files[0];if(!f)return;
   const currentRequest=++requestId;loadedFile=null;
@@ -36,7 +36,7 @@ file.addEventListener('change',async()=>{
     if(!inspectResponse.ok){let detail='HTTP '+inspectResponse.status;try{detail=(await inspectResponse.json()).detail||detail}catch{}throw new Error('Text inspection unavailable: '+detail)}
     const inspected=await inspectResponse.json();
     if(currentRequest!==requestId)return;
-    loadedFile=f;
+    loadedFile=f;refresh();
     status.textContent=`Loaded ${inspected.pages.length} pages. Click highlighted text to edit.`;
     if(!inspected.pages.some(p=>p.spans.length))status.textContent='No selectable text found. Scanned PDFs need OCR before editing.';
     for(let number=1;number<=inspected.pages.length;number++){
@@ -81,17 +81,18 @@ document.getElementById('undo').addEventListener('click',()=>{
  refresh();status.textContent=`${changes.length} staged change(s).`;
 });
 saveBtn.addEventListener('click',async()=>{
- if(!loadedFile||!changes.length)return;
- saveBtn.disabled=true;status.textContent='Saving experimental PDF…';
+ if(saving||!loadedFile||!changes.length)return;
+ saving=true;refresh();status.textContent='Saving experimental PDF…';
+ const sourceFile=loadedFile,submittedChanges=changes.map(c=>({...c})),submissionId=requestId;
  try{
-  const form=new FormData();form.append('file',loadedFile);form.append('changes',JSON.stringify(changes));
+  const form=new FormData();form.append('file',sourceFile);form.append('changes',JSON.stringify(submittedChanges));
   const response=await fetch('/api/experimental/edit-pdf',{method:'POST',body:form});
   if(!response.ok){let message='HTTP '+response.status;try{message=(await response.json()).detail||message}catch{}throw new Error(message)}
   const url=URL.createObjectURL(await response.blob()),a=document.createElement('a');
   a.href=url;a.download='edited.pdf';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
-  status.textContent='Edited PDF downloaded. Review the output carefully.';
- }catch(err){status.textContent='PDF save unavailable: '+err.message}
- finally{saveBtn.disabled=changes.length===0}
+  if(submissionId===requestId)status.textContent='Edited PDF downloaded. Review the output carefully.';
+ }catch(err){if(submissionId===requestId)status.textContent='PDF save unavailable: '+err.message}
+ finally{saving=false;refresh()}
 });
 exportBtn.addEventListener('click',()=>{
  const blob=new Blob([JSON.stringify({schema_version:1,changes},null,2)],{type:'application/json'});
