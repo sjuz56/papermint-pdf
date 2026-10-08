@@ -29,5 +29,15 @@ jobs:
           python -m pip install PyMuPDF==1.28.2
       - name: Check Python syntax
         run: python -m py_compile papermint_edit_engine.py papermint_edit_api.py tests/test_pdf_edit_engine.py
+      - name: Check editor browser JavaScript syntax
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          html = Path("static/edit-pdf-prototype.html").read_text(encoding="utf-8")
+          start = html.index('<script type="module">') + len('<script type="module">')
+          end = html.index("</script>", start)
+          Path("/tmp/pdfaspect-editor.mjs").write_text(html[start:end], encoding="utf-8")
+          PY
+          node --check /tmp/pdfaspect-editor.mjs
       - name: Run regression tests
         run: python -m unittest discover -s tests -p test_pdf_edit_engine.py -v
