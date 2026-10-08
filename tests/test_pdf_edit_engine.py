@@ -35,6 +35,31 @@ class TestPdfTextEdit(unittest.TestCase):
             self.assertNotIn("Invoice 1234", text)
             self.assertIn("Total 500", text)
 
+    def test_two_distinct_spans_can_be_edited_together(self):
+        result = replace_text(self.source, self.output, [
+            TextReplacement(0, "Invoice 1234", "Invoice 12"),
+            TextReplacement(0, "Total 500", "Total 50"),
+        ])
+        self.assertEqual(result["replacements"], 2)
+        with fitz.open(self.output) as doc:
+            text = doc[0].get_text()
+            self.assertIn("Invoice 12", text)
+            self.assertIn("Total 50", text)
+            self.assertNotIn("Invoice 1234", text)
+
+    def test_duplicate_text_occurrence_selects_second_span(self):
+        with fitz.open(self.source) as doc:
+            doc[0].insert_text((72, 180), "Total 500", fontsize=12)
+            doc.save(self.source + ".tmp")
+        Path(self.source + ".tmp").replace(self.source)
+        replace_text(self.source, self.output, [
+            TextReplacement(0, "Total 500", "Total 50", occurrence=1)
+        ])
+        with fitz.open(self.output) as doc:
+            text = doc[0].get_text()
+            self.assertEqual(text.count("Total 500"), 1)
+            self.assertEqual(text.count("Total 50"), 1)
+
     def test_reject_missing_span_without_writing_output(self):
         with self.assertRaises(PdfEditError):
             replace_text(self.source, self.output, [
