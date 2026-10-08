@@ -93,6 +93,8 @@ def replace_text(pdf_path: str, output_path: str, changes: list[TextReplacement]
         for p, rect, new_text, span, font_file in operations:
             if "\n" in new_text or "\r" in new_text:
                 raise PdfEditError("Multiline edits are not supported yet")
+            if any(ord(char) < 32 or ord(char) == 127 for char in new_text):
+                raise PdfEditError("Control characters are not supported in replacement text")
             if font_file:
                 selected_font_path = Path(font_file)
                 if not selected_font_path.is_file() or selected_font_path.suffix.lower() not in {".ttf", ".otf"}:
