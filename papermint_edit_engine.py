@@ -133,7 +133,7 @@ def replace_text(pdf_path: str, output_path: str, changes: list[TextReplacement]
         # Do not publish an output with missing replacement text or surviving
         # original text in a replaced span.
         for p, rect, new_text, span, _ in operations:
-            extracted = doc[p].get_textbox(rect + (-1, -2, 2, 2))
+            extracted = doc[p].get_text("text")
             if new_text not in extracted:
                 raise PdfEditError("Replacement could not be verified in the output PDF")
         doc.save(output_path, garbage=4, deflate=True)
