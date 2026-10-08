@@ -17,16 +17,17 @@ textarea{display:block;box-sizing:border-box;width:100%;min-height:75px;margin:8
 </style>
 </head>
 <body>
-<header><strong>🐙 PDFaspect — Edit PDF</strong><label class="upload">Open PDF <input type="file" id="file" accept="application/pdf" hidden></label><button id="export" disabled>Export changes JSON</button></header>
+<header><strong>🐙 PDFaspect — Edit PDF</strong><label class="upload">Open PDF <input type="file" id="file" accept="application/pdf" hidden></label><button id="export" disabled>Export changes JSON</button><button id="save" disabled>Download edited PDF (experimental)</button></header>
 <main><section id="editor" hidden><b id="selection"></b><textarea id="replacement" aria-label="Replacement text"></textarea><button id="apply">Stage change</button> <button id="undo">Undo last</button><p><small>This is a preview prototype. Exported changes are NOT a modified PDF. PDF saving will be connected to a validated server endpoint later.</small></p></section><div id="status">Choose a PDF to preview and select its text.</div><div id="pages"></div></main>
 <script type="module">
 import * as pdfjsLib from 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.min.mjs';
 pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.worker.min.mjs';
+const saveBtn=document.getElementById('save');
 const file=document.getElementById('file'),pages=document.getElementById('pages'),status=document.getElementById('status'),editor=document.getElementById('editor'),selection=document.getElementById('selection'),replacement=document.getElementById('replacement'),exportBtn=document.getElementById('export');
 let changes=[],chosen=null;
 file.addEventListener('change',async()=>{
   const f=file.files[0];if(!f)return;
-  pages.replaceChildren();editor.hidden=true;changes=[];chosen=null;exportBtn.disabled=true;
+  pages.replaceChildren();editor.hidden=true;changes=[];chosen=null;exportBtn.disabled=true;saveBtn.disabled=true;
   try{
     const data=new Uint8Array(await f.arrayBuffer());
     const pdf=await pdfjsLib.getDocument({data}).promise;
@@ -65,13 +66,26 @@ document.getElementById('apply').addEventListener('click',()=>{
  if(!chosen||!replacement.value.trim())return;
  changes=changes.filter(c=>!(c.page===chosen.page&&c.old_text===chosen.old_text&&c.occurrence===chosen.occurrence));
  if(replacement.value!==chosen.old_text)changes.push({page:chosen.page,old_text:chosen.old_text,new_text:replacement.value,occurrence:chosen.occurrence});
- chosen.element.style.outline=changes.some(c=>c.page===chosen.page&&c.old_text===chosen.old_text&&c.occurrence===chosen.occurrence)?'2px solid #16a085':'';exportBtn.disabled=changes.length===0;
+ chosen.element.style.outline=changes.some(c=>c.page===chosen.page&&c.old_text===chosen.old_text&&c.occurrence===chosen.occurrence)?'2px solid #16a085':'';exportBtn.disabled=changes.length===0;saveBtn.disabled=changes.length===0;
  status.textContent=`${changes.length} staged change(s). Export JSON for review.`;
 });
 document.getElementById('undo').addEventListener('click',()=>{
  const last=changes.pop();if(!last)return;
  if(chosen&&chosen.page===last.page&&chosen.old_text===last.old_text&&chosen.occurrence===last.occurrence){chosen.element.style.outline='';replacement.value=chosen.old_text;}
- exportBtn.disabled=changes.length===0;status.textContent=`${changes.length} staged change(s).`;
+ exportBtn.disabled=changes.length===0;saveBtn.disabled=changes.length===0;status.textContent=`${changes.length} staged change(s).`;
+});
+saveBtn.addEventListener('click',async()=>{
+ if(!file.files[0]||!changes.length)return;
+ saveBtn.disabled=true;status.textContent='Saving experimental PDF…';
+ try{
+  const form=new FormData();form.append('file',file.files[0]);form.append('changes',JSON.stringify(changes));
+  const response=await fetch('/api/experimental/edit-pdf',{method:'POST',body:form});
+  if(!response.ok){let message='HTTP '+response.status;try{message=(await response.json()).detail||message}catch{}throw new Error(message)}
+  const url=URL.createObjectURL(await response.blob()),a=document.createElement('a');
+  a.href=url;a.download='edited.pdf';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+  status.textContent='Edited PDF downloaded. Review the output carefully.';
+ }catch(err){status.textContent='PDF save unavailable: '+err.message}
+ finally{saveBtn.disabled=changes.length===0}
 });
 exportBtn.addEventListener('click',()=>{
  const blob=new Blob([JSON.stringify({schema_version:1,changes},null,2)],{type:'application/json'});
