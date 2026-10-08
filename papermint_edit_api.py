@@ -9,7 +9,7 @@ from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import Response
 from starlette.concurrency import run_in_threadpool
 
-from papermint_edit_engine import PdfEditError, TextReplacement, replace_text, inspect_text
+from papermint_edit_engine import PdfEditError, TextReplacement, replace_text, inspect_page
 
 router = APIRouter()
 MAX_EDIT_BYTES = 10 * 1024 * 1024
@@ -36,7 +36,11 @@ def _inspect_document(source: Path) -> dict:
         for number in range(len(doc)):
             occurrences = {}
             spans = []
-            for span in inspect_text(str(source), number):
+            for raw in inspect_page(doc[number]):
+                span = {
+                    "text": raw["text"], "bbox": list(raw["bbox"]),
+                    "font": raw["font"], "size": raw["size"], "color": raw["color"],
+                }
                 value = span["text"]
                 occurrence = occurrences.get(value, 0)
                 occurrences[value] = occurrence + 1
