@@ -99,6 +99,8 @@ async def edit_pdf_experimental(file: UploadFile = File(...), changes: str = For
         raise HTTPException(status_code=404, detail="Not available")
     if not (file.filename or "").lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="A PDF file is required")
+    if len(changes) > 100_000:
+        raise HTTPException(status_code=413, detail="Too many edit instructions")
     try:
         parsed = json.loads(changes)
         if not isinstance(parsed, list) or not 1 <= len(parsed) <= MAX_CHANGES:
