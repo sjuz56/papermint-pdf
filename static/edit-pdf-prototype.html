@@ -8,7 +8,7 @@ body{margin:0;background:#f3f6fb;color:#152b43;font:15px system-ui,sans-serif}
 header{padding:16px 24px;background:#102b4b;color:white;display:flex;gap:20px;align-items:center;flex-wrap:wrap}
 header strong{font-size:21px}button,.upload{border:0;border-radius:8px;background:#f78d39;color:#152b43;padding:10px 14px;font-weight:700;cursor:pointer}
 button:disabled{opacity:.4;cursor:not-allowed}main{max-width:1000px;margin:20px auto;padding:0 16px}
-#pages{display:grid;gap:20px;justify-items:center}.page{position:relative;box-shadow:0 5px 24px #17304b33;background:white}
+#pages{display:grid;gap:20px;justify-items:center}.page{position:relative;box-shadow:0 5px 24px #17304b33;background:white;max-width:100%;height:auto!important;aspect-ratio:var(--page-ratio)}
 .page img{display:block;max-width:100%}.span{position:absolute;cursor:text;outline:1px solid transparent;color:transparent;white-space:pre;overflow:hidden}
 .span:hover,.span:focus{outline:2px solid #fa8a2d;background:#fba65033}
 #editor{position:sticky;top:0;z-index:3;background:white;padding:14px;box-shadow:0 2px 12px #17304b20;border-radius:10px;margin-bottom:18px}
@@ -35,7 +35,7 @@ file.addEventListener('change',async()=>{
     status.textContent=`Loaded ${inspected.pages.length} pages. Click highlighted text to edit.`;
     for(let number=1;number<=inspected.pages.length;number++){
       const pageInfo=inspected.pages[number-1],scale=1.4;
-      const wrapper=document.createElement('div');wrapper.className='page';
+      const wrapper=document.createElement('div');wrapper.className='page';wrapper.style.setProperty('--page-ratio',pageInfo.width+'/'+pageInfo.height);
       wrapper.style.width=(pageInfo.width*scale)+'px';wrapper.style.height=(pageInfo.height*scale)+'px';
       const preview=document.createElement('img');preview.src=pageInfo.image;preview.alt='PDF page '+number;
       preview.style.display='block';preview.style.width='100%';preview.style.height='100%';
@@ -46,8 +46,8 @@ file.addEventListener('change',async()=>{
         const width=(x1-x0)*scale,height=(y1-y0)*scale;
         const div=document.createElement('div');div.className='span';div.tabIndex=0;
         div.setAttribute('role','button');div.setAttribute('aria-label','Edit '+span.text);
-        div.style.left=left+'px';div.style.top=top+'px';
-        div.style.width=Math.max(4,width)+'px';div.style.height=Math.max(5,height)+'px';
+        div.style.left=(left/(pageInfo.width*scale)*100)+'%';div.style.top=(top/(pageInfo.height*scale)*100)+'%';
+        div.style.width=(Math.max(4,width)/(pageInfo.width*scale)*100)+'%';div.style.height=(Math.max(5,height)/(pageInfo.height*scale)*100)+'%';
         const original=span.text,occurrence=span.occurrence;
         div.title=original;
         const pick=()=>{
