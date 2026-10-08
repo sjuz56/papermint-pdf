@@ -1,0 +1,31 @@
+name: PDF edit prototype tests
+on:
+  push:
+    branches: [feature/advanced-pdf-text-edit]
+  pull_request:
+    paths:
+      - "papermint_edit_*.py"
+      - "tests/test_pdf_edit_engine.py"
+      - ".github/workflows/pdf-edit-tests.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  editor-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: Install editor dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install PyMuPDF==1.28.2
+      - name: Run regression tests
+        run: python -m unittest discover -s tests -p test_pdf_edit_engine.py -v
