@@ -51,7 +51,11 @@ async def inspect_pdf_experimental(file: UploadFile = File(...)):
                         value = span["text"]
                         occurrence = occurrences.get(value, 0)
                         occurrences[value] = occurrence + 1
-                        spans.append({**span, "occurrence": occurrence})
+                        # Text extraction uses unrotated coordinates, while the
+                        # rendered preview follows the page rotation.
+                        import fitz
+                        rotated = fitz.Rect(span["bbox"]) * doc[number].rotation_matrix
+                        spans.append({**span, "bbox": list(rotated), "occurrence": occurrence})
                     pix = doc[number].get_pixmap(matrix=fitz.Matrix(1.4, 1.4), alpha=False)
                     pages.append({
                         "image": "data:image/png;base64," + base64.b64encode(pix.tobytes("png")).decode("ascii"),
