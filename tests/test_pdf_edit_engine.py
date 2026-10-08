@@ -156,6 +156,27 @@ class TestPdfTextEdit(unittest.TestCase):
             self.assertEqual(doc[0].search_for("Invoice 1234"), [])
             self.assertTrue(doc[0].search_for("Invoice 12"))
 
+    def test_reject_boolean_page_number(self):
+        with self.assertRaisesRegex(PdfEditError, "must be integers"):
+            replace_text(self.source, self.output, [
+                TextReplacement(True, "Invoice 1234", "Invoice 12")
+            ])
+        self.assertFalse(Path(self.output).exists())
+
+    def test_reject_non_string_replacement(self):
+        with self.assertRaisesRegex(PdfEditError, "must be strings"):
+            replace_text(self.source, self.output, [
+                TextReplacement(0, "Invoice 1234", 123)
+            ])
+        self.assertFalse(Path(self.output).exists())
+
+    def test_reject_negative_occurrence(self):
+        with self.assertRaisesRegex(PdfEditError, "not found"):
+            replace_text(self.source, self.output, [
+                TextReplacement(0, "Invoice 1234", "Invoice 12", occurrence=-1)
+            ])
+        self.assertFalse(Path(self.output).exists())
+
     def test_reject_overwriting_original(self):
         with self.assertRaises(PdfEditError):
             replace_text(self.source, self.source, [
