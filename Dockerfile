@@ -12,6 +12,7 @@ RUN apt-get update \
         libreoffice-impress \
         libreoffice-calc \
         ghostscript \
+        poppler-utils \
         tesseract-ocr \
         tesseract-ocr-eng \
         tesseract-ocr-ces \
