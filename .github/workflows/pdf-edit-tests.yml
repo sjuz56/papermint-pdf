@@ -6,6 +6,8 @@ on:
     paths:
       - "papermint_edit_*.py"
       - "tests/test_pdf_edit_engine.py"
+      - "tests/test_pdf_edit_api.py"
+      - "static/edit-pdf-prototype.html"
       - ".github/workflows/pdf-edit-tests.yml"
   workflow_dispatch:
 
