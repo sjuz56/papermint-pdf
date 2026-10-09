@@ -89,9 +89,11 @@ saveBtn.addEventListener('click',async()=>{
   const form=new FormData();form.append('file',sourceFile);form.append('changes',JSON.stringify(submittedChanges));
   const response=await fetch('/api/experimental/edit-pdf',{method:'POST',body:form});
   if(!response.ok){let message='HTTP '+response.status;try{message=(await response.json()).detail||message}catch{}throw new Error(message)}
-  const url=URL.createObjectURL(await response.blob()),a=document.createElement('a');
+  const result=await response.blob();
+  if(submissionId!==requestId)return; // A different PDF was selected during save.
+  const url=URL.createObjectURL(result),a=document.createElement('a');
   a.href=url;a.download='edited.pdf';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
-  if(submissionId===requestId)status.textContent='Edited PDF downloaded. Review the output carefully.';
+  status.textContent='Edited PDF downloaded. Review the output carefully.';
  }catch(err){if(submissionId===requestId)status.textContent='PDF save unavailable: '+err.message}
  finally{saving=false;refresh()}
 });
