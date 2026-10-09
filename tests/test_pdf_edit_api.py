@@ -73,6 +73,24 @@ class PdfEditApiTests(unittest.TestCase):
             self.assertEqual(response.status_code, 422)
             self.assertIn("rotated", response.json()["detail"])
 
+    def test_reject_malformed_edit_payload(self):
+        with patch.dict(os.environ, {"PAPERMINT_ENABLE_EXPERIMENTAL_EDIT_PDF": "1"}):
+            response = self.client.post(
+                "/api/experimental/edit-pdf",
+                files={"file": ("test.pdf", io.BytesIO(sample_pdf()), "application/pdf")},
+                data={"changes": "not valid json"},
+            )
+            self.assertEqual(response.status_code, 422)
+
+    def test_reject_oversized_edit_instructions(self):
+        with patch.dict(os.environ, {"PAPERMINT_ENABLE_EXPERIMENTAL_EDIT_PDF": "1"}):
+            response = self.client.post(
+                "/api/experimental/edit-pdf",
+                files={"file": ("test.pdf", io.BytesIO(sample_pdf()), "application/pdf")},
+                data={"changes": "x" * 100001},
+            )
+            self.assertEqual(response.status_code, 413)
+
     def test_reject_client_supplied_font_path(self):
         with patch.dict(os.environ, {"PAPERMINT_ENABLE_EXPERIMENTAL_EDIT_PDF": "1"}):
             response = self.client.post(
