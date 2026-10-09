@@ -25,7 +25,7 @@ def main():
 
         env = {**os.environ, "PAPERMINT_ENABLE_EXPERIMENTAL_EDIT_PDF": "1"}
         server = subprocess.Popen(
-            ["python", "-m", "uvicorn", "tests.browser_pdf_edit_server:app",
+            ["python", "-m", "uvicorn", "browser_pdf_edit_server:app", "--app-dir", "tests",
              "--host", "127.0.0.1", "--port", str(PORT)],
             cwd=ROOT, env=env, stdout=subprocess.DEVNULL,
             stderr=subprocess.PIPE,
