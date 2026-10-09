@@ -34,6 +34,8 @@ def _inspect_document(source: Path) -> dict:
         pages = []
         total_pixels = 0
         for number in range(len(doc)):
+            if doc[number].rotation != 0:
+                raise PdfEditError("Editing rotated PDF pages is not supported yet")
             page_pixels = doc[number].rect.width * doc[number].rect.height * 1.4 * 1.4
             if page_pixels > MAX_PAGE_PIXELS:
                 raise PdfEditError("Page too large for experimental preview")
