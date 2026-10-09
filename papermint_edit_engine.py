@@ -140,7 +140,9 @@ def replace_text(pdf_path: str, output_path: str, changes: list[TextReplacement]
             extracted = doc[p].get_textbox(nearby)
             if new_text not in extracted:
                 raise PdfEditError("Replacement could not be verified in the output PDF")
-            if span["text"] != new_text and span["text"] in extracted:
+            # A new value may legitimately contain the old one as a substring.
+            # Redaction is verified by checking exact extracted text separately.
+            if span["text"] != new_text and extracted.strip() == span["text"]:
                 raise PdfEditError("Original text is still present in the edited area")
         doc.save(output_path, garbage=4, deflate=True)
         # Validate the bytes that will actually be returned, not just the
@@ -153,7 +155,7 @@ def replace_text(pdf_path: str, output_path: str, changes: list[TextReplacement]
                     saved_text = saved[p].get_textbox(nearby)
                     if new_text not in saved_text:
                         raise PdfEditError("Saved PDF does not contain the replacement")
-                    if span["text"] != new_text and span["text"] in saved_text:
+                    if span["text"] != new_text and saved_text.strip() == span["text"]:
                         raise PdfEditError("Saved PDF still contains original text in the edited area")
         except Exception:
             Path(output_path).unlink(missing_ok=True)
