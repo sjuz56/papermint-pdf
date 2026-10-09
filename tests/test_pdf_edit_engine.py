@@ -209,14 +209,14 @@ class TestPdfTextEdit(unittest.TestCase):
 
     def test_replacement_containing_original_substring(self):
         with fitz.open(self.source) as doc:
-            doc[0].insert_text((72, 200), "ABC", fontsize=12)
+            doc[0].insert_text((72, 200), "iii", fontname="cour", fontsize=12)
             doc.save(self.source + ".tmp")
         Path(self.source + ".tmp").replace(self.source)
         replace_text(self.source, self.output, [
-            TextReplacement(0, "ABC", "ABCD")
+            TextReplacement(0, "iii", "iiiii")
         ])
         with fitz.open(self.output) as doc:
-            self.assertTrue(doc[0].search_for("ABCD"))
+            self.assertTrue(doc[0].search_for("iiiii"))
 
     def test_reject_overwriting_original(self):
         with self.assertRaises(PdfEditError):
