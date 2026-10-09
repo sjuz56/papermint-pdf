@@ -146,11 +146,21 @@ def replace_text(pdf_path: str, output_path: str, changes: list[TextReplacement]
             # Redaction is verified by checking exact extracted text separately.
             if span["text"] != new_text and extracted.strip() == span["text"]:
                 raise PdfEditError("Original text is still present in the edited area")
-        doc.save(output_path, garbage=4, deflate=True)
-        # Validate the bytes that will actually be returned, not just the
-        # mutable in-memory document. A corrupt or incomplete save must fail.
+        # Save to a temporary sibling file, then atomically publish only
+        # after all verification passes. Never leave a partial output behind.
+        import os
+        import tempfile
+        output = Path(output_path)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        fd, temporary_name = tempfile.mkstemp(
+            prefix=".pdfaspect-edit-", suffix=".pdf", dir=output.parent
+        )
+        os.close(fd)
+        temporary = Path(temporary_name)
         try:
-            with fitz.open(output_path) as saved:
+            doc.save(str(temporary), garbage=4, deflate=True)
+            # Validate the bytes that will actually be returned.
+            with fitz.open(str(temporary)) as saved:
                 for p, rect, new_text, span, _ in operations:
                     nearby = fitz.Rect(rect.x0 - 2, rect.y0 - 3,
                                        rect.x1 + 2, rect.y1 + 3)
@@ -159,9 +169,9 @@ def replace_text(pdf_path: str, output_path: str, changes: list[TextReplacement]
                         raise PdfEditError("Saved PDF does not contain the replacement")
                     if span["text"] != new_text and saved_text.strip() == span["text"]:
                         raise PdfEditError("Saved PDF still contains original text in the edited area")
-        except Exception:
-            Path(output_path).unlink(missing_ok=True)
-            raise
+            os.replace(temporary, output)
+        finally:
+            temporary.unlink(missing_ok=True)
         return {"replacements": len(operations), "output": output_path}
 
 
