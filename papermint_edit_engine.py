@@ -68,6 +68,8 @@ def replace_text(pdf_path: str, output_path: str, changes: list[TextReplacement]
                 raise PdfEditError("Replacement text must be strings")
             if not change.old_text or not change.new_text.strip():
                 raise PdfEditError("Both old and new text must be nonempty")
+            if doc[change.page].rotation != 0:
+                raise PdfEditError("Editing rotated PDF pages is not supported yet")
             if change.page not in page_spans:
                 page_spans[change.page] = inspect_page(doc[change.page])
             matches = [s for s in page_spans[change.page]
