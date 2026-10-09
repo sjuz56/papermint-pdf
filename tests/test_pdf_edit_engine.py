@@ -207,16 +207,16 @@ class TestPdfTextEdit(unittest.TestCase):
             self.assertTrue(doc[0].search_for("Invoice 12"))
             self.assertFalse(doc[0].search_for("Invoice 1234"))
 
-    def test_replacement_containing_original_substring(self):
+    def test_reject_longer_text_even_if_it_contains_original(self):
         with fitz.open(self.source) as doc:
             doc[0].insert_text((72, 200), "iii", fontname="cour", fontsize=12)
             doc.save(self.source + ".tmp")
         Path(self.source + ".tmp").replace(self.source)
-        replace_text(self.source, self.output, [
-            TextReplacement(0, "iii", "iiiii")
-        ])
-        with fitz.open(self.output) as doc:
-            self.assertTrue(doc[0].search_for("iiiii"))
+        with self.assertRaisesRegex(PdfEditError, "wider than original"):
+            replace_text(self.source, self.output, [
+                TextReplacement(0, "iii", "iiiii")
+            ])
+        self.assertFalse(Path(self.output).exists())
 
     def test_reject_rotated_page_without_output(self):
         with fitz.open(self.source) as doc:
