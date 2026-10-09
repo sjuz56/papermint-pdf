@@ -106,10 +106,10 @@ def replace_text(pdf_path: str, output_path: str, changes: list[TextReplacement]
                     raise PdfEditError("Provide an existing TTF or OTF font file")
                 font = fitz.Font(fontfile=str(selected_font_path))
             else:
-                try:
-                    new_text.encode("cp1252")
-                except UnicodeEncodeError as exc:
-                    raise PdfEditError("Supply a Unicode font_file for this text") from exc
+                # Built-in Helvetica is not reliable for non-ASCII text.
+                # Require an embedded font for accented letters and symbols.
+                if any(ord(char) > 127 for char in new_text):
+                    raise PdfEditError("Supply a Unicode font_file for this text")
                 font = fitz.Font("helv")
             if font.text_length(new_text, fontsize=span["size"]) > rect.width + 0.5:
                 raise PdfEditError("Replacement is wider than original text box")
