@@ -229,6 +229,23 @@ class TestPdfTextEdit(unittest.TestCase):
             ])
         self.assertFalse(Path(self.output).exists())
 
+    def test_success_does_not_leave_temporary_files(self):
+        replace_text(self.source, self.output, [
+            TextReplacement(0, "Invoice 1234", "Invoice 12")
+        ])
+        self.assertTrue(Path(self.output).is_file())
+        self.assertEqual(
+            list(Path(self.temp.name).glob(".pdfaspect-edit-*.pdf")), []
+        )
+
+    def test_failed_edit_preserves_existing_output(self):
+        Path(self.output).write_bytes(b"existing result")
+        with self.assertRaises(PdfEditError):
+            replace_text(self.source, self.output, [
+                TextReplacement(0, "Invoice 1234", "A much longer replacement that will not fit")
+            ])
+        self.assertEqual(Path(self.output).read_bytes(), b"existing result")
+
     def test_reject_overwriting_original(self):
         with self.assertRaises(PdfEditError):
             replace_text(self.source, self.source, [
