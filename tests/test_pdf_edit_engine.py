@@ -246,6 +246,23 @@ class TestPdfTextEdit(unittest.TestCase):
             ])
         self.assertEqual(Path(self.output).read_bytes(), b"existing result")
 
+    def test_failed_edit_preserves_existing_output(self):
+        original_output = b"previous successful output"
+        Path(self.output).write_bytes(original_output)
+        with self.assertRaises(PdfEditError):
+            replace_text(self.source, self.output, [
+                TextReplacement(0, "Invoice 1234", "This text is far too long for the original box")
+            ])
+        self.assertEqual(Path(self.output).read_bytes(), original_output)
+
+    def test_replacement_of_same_text_does_not_corrupt_pdf(self):
+        replace_text(self.source, self.output, [
+            TextReplacement(0, "Invoice 1234", "Invoice 1234")
+        ])
+        with fitz.open(self.output) as doc:
+            self.assertIn("Invoice 1234", doc[0].get_text())
+            self.assertIn("Total 500", doc[0].get_text())
+
     def test_reject_overwriting_original(self):
         with self.assertRaises(PdfEditError):
             replace_text(self.source, self.source, [
