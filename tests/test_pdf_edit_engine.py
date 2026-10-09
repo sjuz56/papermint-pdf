@@ -218,6 +218,17 @@ class TestPdfTextEdit(unittest.TestCase):
         with fitz.open(self.output) as doc:
             self.assertTrue(doc[0].search_for("iiiii"))
 
+    def test_reject_rotated_page_without_output(self):
+        with fitz.open(self.source) as doc:
+            doc[0].set_rotation(90)
+            doc.save(self.source + ".tmp")
+        Path(self.source + ".tmp").replace(self.source)
+        with self.assertRaisesRegex(PdfEditError, "rotated PDF pages"):
+            replace_text(self.source, self.output, [
+                TextReplacement(0, "Invoice 1234", "Invoice 12")
+            ])
+        self.assertFalse(Path(self.output).exists())
+
     def test_reject_overwriting_original(self):
         with self.assertRaises(PdfEditError):
             replace_text(self.source, self.source, [
