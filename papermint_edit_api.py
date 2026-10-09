@@ -88,7 +88,12 @@ async def inspect_pdf_experimental(file: UploadFile = File(...)):
             if stream.read(5) != b"%PDF-":
                 raise HTTPException(status_code=400, detail="Invalid PDF header")
         try:
-            return await run_in_threadpool(_inspect_document, source)
+            result = await run_in_threadpool(_inspect_document, source)
+            return Response(
+                content=json.dumps(result),
+                media_type="application/json",
+                headers={"Cache-Control": "no-store"},
+            )
         except (PdfEditError, ValueError) as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         except Exception as exc:
