@@ -42,4 +42,6 @@ jobs:
           PY
           node --check /tmp/pdfaspect-editor.mjs
       - name: Run regression tests
-        run: python -m unittest discover -s tests -p test_pdf_edit_engine.py -v
+        run: |
+          python -m unittest discover -s tests -p 'test_pdf_edit_engine.py' -v
+          python -m unittest discover -s tests -p 'test_pdf_edit_api.py' -v
