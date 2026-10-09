@@ -214,7 +214,7 @@ class TestPdfTextEdit(unittest.TestCase):
         Path(self.source + ".tmp").replace(self.source)
         with self.assertRaisesRegex(PdfEditError, "wider than original"):
             replace_text(self.source, self.output, [
-                TextReplacement(0, "iii", "iiiii")
+                TextReplacement(0, "iii", "iiiiiiiiiiiiiiiiiiii")
             ])
         self.assertFalse(Path(self.output).exists())
 
