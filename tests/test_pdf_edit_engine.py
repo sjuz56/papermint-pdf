@@ -6,7 +6,7 @@ from pathlib import Path
 
 import fitz
 
-from papermint_edit_engine import PdfEditError, TextReplacement, inspect_text, replace_text
+from papermint_edit_engine import PdfEditError, TextReplacement, inspect_text, replace_text, inspect_page, editing_bbox
 
 
 class TestPdfTextEdit(unittest.TestCase):
@@ -382,6 +382,104 @@ class TestPdfTextEdit(unittest.TestCase):
             replace_text(self.source, self.source, [
                 TextReplacement(0, "Invoice 1234", "Invoice 12")
             ])
+
+    def test_short_word_can_grow_horizontally_without_wrapping(self):
+        with fitz.open() as doc:
+            page = doc.new_page()
+            page.insert_text((72, 100), "Hi", fontsize=12)
+            page.insert_text((72, 140), "Leave this line", fontsize=12)
+            doc.save(self.source)
+        replace_text(self.source, self.output, [
+            TextReplacement(0, "Hi", "A whole sentence stays on this line", width=400)
+        ])
+        with fitz.open(self.output) as doc:
+            span = next(s for b in doc[0].get_text("dict")["blocks"]
+                        for line in b.get("lines", []) for s in line["spans"]
+                        if s["text"].startswith("A whole"))
+            self.assertEqual(span["text"], "A whole sentence stays on this line")
+            self.assertAlmostEqual(span["origin"][1], 100)
+            self.assertIn("Leave this line", doc[0].get_text())
+
+    def test_bold_only_change_is_saved_and_searchable(self):
+        replace_text(self.source, self.output, [
+            TextReplacement(0, "Invoice 1234", "Invoice 1234", bold=True, width=400)
+        ])
+        with fitz.open(self.output) as doc:
+            span = next(s for b in doc[0].get_text("dict")["blocks"]
+                        for line in b.get("lines", []) for s in line["spans"] if s["text"] == "Invoice 1234")
+            self.assertTrue(span["flags"] & 16)
+            self.assertTrue(doc[0].search_for("Invoice 1234"))
+            self.assertIn("Total 500", doc[0].get_text())
+
+    def test_bold_can_be_removed_without_losing_italic(self):
+        with fitz.open() as doc:
+            page = doc.new_page()
+            page.insert_text((72, 100), "Bold italic", fontname="hebi", fontsize=12, color=(0, 0.4, 0.2))
+            doc.save(self.source)
+        replace_text(self.source, self.output, [
+            TextReplacement(0, "Bold italic", "Regular italic", bold=False, width=400)
+        ])
+        with fitz.open(self.output) as doc:
+            span = doc[0].get_text("dict")["blocks"][0]["lines"][0]["spans"][0]
+            self.assertFalse(span["flags"] & 16)
+            self.assertTrue(span["flags"] & 2)
+            self.assertEqual(span["color"], 0x006633)
+
+    def test_bold_czech_text_and_horizontal_width_are_preserved(self):
+        replace_text(self.source, self.output, [
+            TextReplacement(0, "Invoice 1234", "Příliš žluťoučký kůň běží dál", bold=True, width=400)
+        ])
+        with fitz.open(self.output) as doc:
+            span = next(s for b in doc[0].get_text("dict")["blocks"]
+                        for line in b.get("lines", []) for s in line["spans"] if s["text"].startswith("Příliš"))
+            self.assertEqual(span["text"], "Příliš žluťoučký kůň běží dál")
+            self.assertTrue(span["flags"] & 16)
+
+    def test_horizontal_growth_cannot_cross_an_adjacent_text_column(self):
+        with fitz.open() as doc:
+            page = doc.new_page()
+            page.insert_text((72, 100), "Hi", fontsize=12)
+            page.insert_text((160, 100), "Other column", fontsize=12)
+            blocks = inspect_page(page)
+            left = next(b for b in blocks if b["text"] == "Hi")
+            box = editing_bbox(page, left, blocks)
+            self.assertLessEqual(box[2], 158)
+            doc.save(self.source)
+        with self.assertRaisesRegex(PdfEditError, "available space"):
+            replace_text(self.source, self.output, [TextReplacement(0, "Hi", "Longer text", width=200)])
+        replace_text(self.source, self.output, [
+            TextReplacement(0, "Hi", "Longer text in the left column", width=box[2] - box[0])
+        ])
+        with fitz.open(self.output) as doc:
+            self.assertIn("Other column", doc[0].get_text())
+            self.assertIn("Longertextintheleftcolumn", "".join(doc[0].get_text().split()))
+
+    def test_horizontal_growth_stops_at_a_table_cell_edge(self):
+        with fitz.open() as doc:
+            page = doc.new_page()
+            page.draw_rect(fitz.Rect(65, 80, 150, 120))
+            page.insert_text((72, 100), "Hi", fontsize=12)
+            blocks = inspect_page(page)
+            self.assertAlmostEqual(editing_bbox(page, blocks[0], blocks)[2], 148)
+            doc.save(self.source)
+        with self.assertRaisesRegex(PdfEditError, "available space"):
+            replace_text(self.source, self.output, [TextReplacement(0, "Hi", "Longer text", width=200)])
+
+    def test_width_wraps_only_when_the_requested_line_is_full(self):
+        result = replace_text(self.source, self.output, [
+            TextReplacement(0, "Invoice 1234", "A longer horizontal sentence that wraps", width=160)
+        ])
+        with fitz.open(self.output) as doc:
+            text = doc[0].get_textbox(fitz.Rect(result["edit_boxes"][0]["bbox"]) + (-1, -1, 1, 1))
+            self.assertEqual(text.splitlines()[0], "A longer horizontal sentence")
+            self.assertEqual("".join(text.split()), "Alongerhorizontalsentencethatwraps")
+
+    def test_reject_invalid_bold_and_width_values(self):
+        for options in ({"bold": "true"}, {"width": True}, {"width": float("nan")},
+                        {"width": float("inf")}, {"width": -10}, {"width": 0}):
+            with self.subTest(options=options), self.assertRaises(PdfEditError):
+                replace_text(self.source, self.output, [TextReplacement(0, "Invoice 1234", "Invoice 12", **options)])
+            self.assertFalse(Path(self.output).exists())
 
 
 if __name__ == "__main__":

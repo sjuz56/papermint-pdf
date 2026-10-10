@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import hashlib
+import math
 import os
 from pathlib import Path
 import re
@@ -19,6 +20,8 @@ class TextReplacement:
     new_text: str
     occurrence: int = 0
     font_file: str | None = None
+    bold: bool | None = None
+    width: float | None = None
 
 
 class PdfEditError(ValueError):
@@ -101,6 +104,31 @@ def inspect_text(pdf_path: str, page_number: int) -> list[dict]:
                 for block in inspect_page(doc[page_number])]
 
 
+def editing_bbox(page, block, blocks, drawings=None) -> list[float]:
+    """Allow horizontal growth up to the page margin, adjacent text or cell edge."""
+    rect = fitz.Rect(block["bbox"])
+    right = max(rect.x1, page.rect.x1 - 12)
+    for neighbour in blocks:
+        if neighbour is block:
+            continue
+        for member in neighbour["members"]:
+            other = fitz.Rect(member["bbox"])
+            if other.x0 >= rect.x1 - 0.1 and other.y0 < rect.y1 and other.y1 > rect.y0:
+                right = min(right, max(rect.x1, other.x0 - 2))
+    for drawing in page.get_drawings() if drawings is None else drawings:
+        for item in drawing["items"]:
+            edges = []
+            if item[0] == "l" and abs(item[1].x - item[2].x) < 0.5:
+                edges.append((item[1].x, min(item[1].y, item[2].y), max(item[1].y, item[2].y)))
+            elif item[0] == "re":
+                box = item[1]
+                edges.extend((x, box.y0, box.y1) for x in (box.x0, box.x1))
+            for x, top, bottom in edges:
+                if x > rect.x1 + 0.1 and top < rect.y1 and bottom > rect.y0:
+                    right = min(right, max(rect.x1, x - 2))
+    return [rect.x0, rect.y0, right, rect.y1]
+
+
 def _font_name(name):
     return re.sub(r"[^a-z0-9]", "", re.sub(r"^[A-Z]{6}\+", "", name).lower())
 
@@ -109,7 +137,16 @@ def _supports(font, text):
     return all(font.has_glyph(ord(c)) for c in set(text) if not c.isspace())
 
 
-def _select_font(page, block, text, font_file):
+def _bold(block):
+    return bool(block.get("flags", 0) & 16) or any(
+        name in _font_name(block["font"]) for name in ("bold", "demi", "black"))
+
+
+def _font_family(name):
+    return re.sub(r"semibold|bold|italic|oblique|regular|roman|demi|black", "", _font_name(name))
+
+
+def _select_font(page, block, text, font_file, requested_bold=None):
     if font_file:
         path = Path(font_file)
         if not path.is_file() or path.suffix.lower() not in {".ttf", ".otf"}:
@@ -119,14 +156,19 @@ def _select_font(page, block, text, font_file):
             raise PdfEditError("The selected font does not contain all replacement characters")
         return font, True
     original = _font_name(block["font"])
+    bold = _bold(block) if requested_bold is None else requested_bold
+    style_changed = bold != _bold(block)
+    italic = bool(block.get("flags", 0) & 2) or "italic" in original or "oblique" in original
     for xref, _, _, basefont, *_ in page.get_fonts(full=True):
-        if _font_name(basefont) != original:
+        if (not style_changed and _font_name(basefont) != original) or (
+                style_changed and _font_family(basefont) != _font_family(original)):
             continue
         try:
             buffer = page.parent.extract_font(xref)[3]
             if buffer:
                 font = fitz.Font(fontbuffer=buffer)
-                if _supports(font, text):
+                if (_supports(font, text) and (not style_changed or (
+                        bool(font.flags["bold"]) == bold and bool(font.flags["italic"]) == italic))):
                     return font, False
         except (RuntimeError, ValueError):
             continue
@@ -136,12 +178,18 @@ def _select_font(page, block, text, font_file):
               "timesbolditalic": "tibi", "courier": "cour", "courierbold": "cobo",
               "courieroblique": "coit", "courierboldoblique": "cobi"}
     if original in base14:
-        font = fitz.Font(base14[original])
+        name = base14[original]
+        if style_changed:
+            if original.startswith("helvetica"):
+                name = "hebi" if bold and italic else "hebo" if bold else "heit" if italic else "helv"
+            elif original.startswith("times"):
+                name = "tibi" if bold and italic else "tibo" if bold else "tiit" if italic else "tiro"
+            else:
+                name = "cobi" if bold and italic else "cobo" if bold else "coit" if italic else "cour"
+        font = fitz.Font(name)
         if _supports(font, text):
             return font, False
     flags = block.get("flags", 0)
-    bold = bool(flags & 16) or "bold" in original
-    italic = bool(flags & 2) or "italic" in original or "oblique" in original
     # Some PDFs set misleading serif flags on a subset of DejaVu Sans.
     # Known family names and an installed full version take precedence.
     if any(name in original for name in ("mono", "courier", "consolas")):
@@ -166,15 +214,22 @@ def _select_font(page, block, text, font_file):
                      + ("-" + dejavu_variant if dejavu_variant else "") + ".ttf")
     configured = os.getenv("PAPERMINT_EDIT_UNICODE_FONT")
     original_file = re.sub(r"[^A-Za-z0-9_-]", "", re.sub(r"^[A-Z]{6}\+", "", block["font"])) + ".ttf"
-    candidates = (([Path(configured)] if configured else []) + [root / original_file for root in roots]
+    original_candidates = [root / original_file for root in roots]
+    if style_changed:
+        original_candidates = [root / name for root in roots for name in (
+            "DejaVu" + ("SansMono" if family == "Mono" else family)
+            + ("-" + dejavu_variant if dejavu_variant else "") + ".ttf",
+            f"Liberation{family}-{variant}.ttf")
+            if _font_family(name.removesuffix(".ttf")) == _font_family(original)]
+    candidates = (([Path(configured)] if configured else []) + original_candidates
                   + [root / name for root in roots for name in filenames])
     for path in candidates:
         if path.is_file():
             font = fitz.Font(fontfile=str(path))
-            if _supports(font, text):
+            if (_supports(font, text) and (requested_bold is None or bool(font.flags["bold"]) == bold)):
                 return font, True
     font = fitz.Font("cjk")
-    if _supports(font, text):
+    if _supports(font, text) and (requested_bold is None or bool(font.flags["bold"]) == bold):
         return font, True
     raise PdfEditError("No available font contains all replacement characters")
 
@@ -216,7 +271,7 @@ def _verify(doc, operations):
 def replace_text(pdf_path: str, output_path: str, changes: list[TextReplacement]) -> dict:
     """Remove original glyphs and reflow replacements without moving neighbours.
 
-    Text may grow downwards in the original block width while there is space.
+    Text may grow horizontally in a requested width and downwards in free space.
     Fonts, size, colour and the original baseline are retained where possible.
     Missing subset-font glyphs use a disclosed fallback. Scans and rotated text
     are not editable. Preflight every operation before removing any content.
@@ -236,6 +291,11 @@ def replace_text(pdf_path: str, output_path: str, changes: list[TextReplacement]
                 raise PdfEditError("Page out of range")
             if not isinstance(change.old_text, str) or not isinstance(change.new_text, str):
                 raise PdfEditError("Replacement text must be strings")
+            if change.bold is not None and type(change.bold) is not bool:
+                raise PdfEditError("Bold must be a boolean")
+            if change.width is not None and (type(change.width) not in (int, float)
+                    or not math.isfinite(change.width) or change.width <= 0):
+                raise PdfEditError("Text width must be a positive finite number")
             text = change.new_text.replace("\r\n", "\n").replace("\r", "\n")
             if not change.old_text:
                 raise PdfEditError("Original text must be nonempty")
@@ -255,17 +315,23 @@ def replace_text(pdf_path: str, output_path: str, changes: list[TextReplacement]
             if abs(block["direction"][0] - 1) > 0.001 or abs(block["direction"][1]) > 0.001:
                 raise PdfEditError("Rotated text blocks are not supported yet")
             rect = fitz.Rect(block["bbox"])
-            font, substituted = _select_font(page, block, text, change.font_file)
+            font, substituted = _select_font(page, block, text, change.font_file, change.bold)
+            width = rect.width if change.width is None else change.width
+            if change.width is not None:
+                available = editing_bbox(page, block, page_blocks[change.page])[2] - rect.x0
+                if width > available + 0.1:
+                    raise PdfEditError("Text width exceeds the available space on the page")
             size = block["size"]
             origin = fitz.Point(block["origin"])
             baselines = sorted(set(s["origin"][1] for s in block["members"]))
             gaps = [b - a for a, b in zip(baselines, baselines[1:])]
             lineheight = max(size * 1.2, size * (font.ascender - font.descender),
                              statistics.median(gaps) if gaps else 0)
-            lines = _wrap(text, font, size, rect.width) if text.strip() else []
+            lines = _wrap(text, font, size, width) if text.strip() else []
             area = fitz.Rect(rect)
             if lines:
-                area |= fitz.Rect(origin.x, origin.y - font.ascender * size, rect.x1,
+                ink_right = origin.x + max(font.text_length(line, fontsize=size) for line in lines)
+                area |= fitz.Rect(origin.x, origin.y - font.ascender * size, ink_right,
                                   origin.y + (len(lines) - 1) * lineheight - font.descender * size)
             if not page.rect.contains(area):
                 raise PdfEditError("Replacement does not fit on the page")

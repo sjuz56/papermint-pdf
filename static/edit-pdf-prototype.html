@@ -12,11 +12,12 @@ button:disabled{opacity:.4;cursor:not-allowed}main{max-width:1000px;margin:20px 
 .page img{display:block;width:100%;height:100%}.span{position:absolute;z-index:2;cursor:text;outline:1px solid transparent;min-height:22px;touch-action:manipulation}
 .span:hover,.span:focus{outline:2px solid #fa8a2d;background:#fba65022}.span[data-edited="true"]{outline:1px solid #16a085}.span.editing{z-index:4;outline:2px solid #fa8a2d}
 #editor{position:sticky;top:0;z-index:3;background:white;padding:14px;box-shadow:0 2px 12px #17304b20;border-radius:10px;margin-bottom:18px}
+.format-toggle{font-size:18px;min-width:42px;padding:8px 14px;background:#e8eef5}.format-toggle[aria-pressed="true"]{background:#102b4b;color:white;box-shadow:inset 0 0 0 2px #f78d39}
 #replacement{display:block;box-sizing:border-box;width:100%;min-height:24px;margin:0;padding:0;border:0;background:white;font:inherit;line-height:1.2;resize:none;overflow:hidden;outline:none}
 #status{padding:12px 0}small{color:#516478}
 </style>
 </head>
 <body>
 <header><strong>PDFaspect — Edit PDF</strong><label class="upload">Open PDF <input type="file" id="file" accept="application/pdf" hidden></label><button id="undo" disabled>Undo</button><button id="save" disabled>Download PDF</button></header>
-<main><section id="editor" hidden><b id="selection"></b><p><button id="apply">Apply text</button> <button id="cancel">Cancel</button></p><small>Type directly on the page. Enter adds a line; Ctrl+Enter applies the text. Clear the text to delete it.</small><textarea id="replacement" aria-label="Replacement text" maxlength="2000"></textarea></section><div id="status" role="status">Choose a PDF, then click its text to edit.</div><div id="pages"></div></main>
+<main><section id="editor" hidden><b id="selection"></b><p><button id="bold" class="format-toggle" aria-label="Bold" aria-pressed="false" title="Bold (Ctrl+B)" disabled>B</button> <button id="apply">Apply text</button> <button id="cancel">Cancel</button></p><small>Type directly on the page; text expands into free space on the line. B makes the selected text block bold. Enter adds a line; Ctrl+Enter applies the text. Clear the text to delete it.</small><textarea id="replacement" aria-label="Replacement text" rows="1" maxlength="2000"></textarea></section><div id="status" role="status">Choose a PDF, then click its text to edit.</div><div id="pages"></div></main>
 <script type="module" src="/static/edit-pdf-prototype.js"></script></body></html>

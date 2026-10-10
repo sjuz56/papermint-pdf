@@ -121,6 +121,41 @@ class PdfEditApiTests(unittest.TestCase):
             )
             self.assertEqual(response.status_code, 422)
 
+    def test_inspected_width_and_bold_export_keep_the_sentence_on_one_line(self):
+        with patch.dict(os.environ, {"PAPERMINT_ENABLE_EXPERIMENTAL_EDIT_PDF": "1"}):
+            inspected = self.client.post(
+                "/api/experimental/inspect-pdf",
+                files={"file": ("test.pdf", io.BytesIO(sample_pdf()), "application/pdf")},
+            )
+            span = next(s for s in inspected.json()["pages"][0]["spans"] if s["text"] == "Invoice 1234")
+            width = span["edit_bbox"][2] - span["edit_bbox"][0]
+            self.assertGreater(width, span["bbox"][2] - span["bbox"][0])
+            response = self.client.post(
+                "/api/experimental/edit-pdf",
+                files={"file": ("test.pdf", io.BytesIO(sample_pdf()), "application/pdf")},
+                data={"changes": json.dumps([{"page": 0, "old_text": span["text"],
+                    "new_text": "Příjem za celý minulý měsíc", "occurrence": 0, "bold": True, "width": width}])},
+            )
+            self.assertEqual(response.status_code, 200, response.text[:500])
+            with fitz.open(stream=response.content, filetype="pdf") as doc:
+                first = next(s for b in doc[0].get_text("dict")["blocks"]
+                             for line in b.get("lines", []) for s in line["spans"] if s["text"].startswith("Příjem"))
+                self.assertEqual(first["text"], "Příjem za celý minulý měsíc")
+                self.assertTrue(first["flags"] & 16)
+
+    def test_reject_invalid_formatting_and_excessive_width(self):
+        with patch.dict(os.environ, {"PAPERMINT_ENABLE_EXPERIMENTAL_EDIT_PDF": "1"}):
+            for options in ({"bold": "true"}, {"bold": None}, {"width": True}, {"width": "400"},
+                            {"width": float("inf")}, {"width": 2000}):
+                with self.subTest(options=options):
+                    response = self.client.post(
+                        "/api/experimental/edit-pdf",
+                        files={"file": ("test.pdf", io.BytesIO(sample_pdf()), "application/pdf")},
+                        data={"changes": json.dumps([{"page": 0, "old_text": "Invoice 1234",
+                            "new_text": "Invoice 12", "occurrence": 0, **options}])},
+                    )
+                    self.assertEqual(response.status_code, 422, response.text[:500])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -9,7 +9,7 @@ from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import Response
 from starlette.concurrency import run_in_threadpool
 
-from papermint_edit_engine import PdfEditError, TextReplacement, replace_text, inspect_page
+from papermint_edit_engine import PdfEditError, TextReplacement, replace_text, inspect_page, editing_bbox
 
 router = APIRouter()
 MAX_EDIT_BYTES = 10 * 1024 * 1024
@@ -44,11 +44,14 @@ def _inspect_document(source: Path) -> dict:
                 raise PdfEditError("PDF exceeds experimental preview rendering limit")
             occurrences = {}
             spans = []
-            for raw in inspect_page(doc[number]):
+            blocks = inspect_page(doc[number])
+            drawings = doc[number].get_drawings()
+            for raw in blocks:
                 span = {
                     "text": raw["text"], "bbox": list(raw["bbox"]),
                     "font": raw["font"], "size": raw["size"], "color": raw["color"],
                     "flags": raw.get("flags", 0),
+                    "edit_bbox": editing_bbox(doc[number], raw, blocks, drawings),
                 }
                 value = span["text"]
                 occurrence = occurrences.get(value, 0)
@@ -117,12 +120,18 @@ async def edit_pdf_experimental(file: UploadFile = File(...), changes: str = For
         # The engine selects the original font or a server-owned fallback.
         # Never accept filesystem paths from uploaded JSON.
         for item in parsed:
-            if not isinstance(item, dict) or set(item) != {"page", "old_text", "new_text", "occurrence"}:
+            required = {"page", "old_text", "new_text", "occurrence"}
+            if (not isinstance(item, dict) or not required.issubset(item)
+                    or set(item) - required - {"bold", "width"}):
                 raise ValueError("Invalid change format")
             if type(item["page"]) is not int or type(item["occurrence"]) is not int:
                 raise ValueError("Page and occurrence must be integers")
             if not all(isinstance(item[k], str) and len(item[k]) <= 2000 for k in ("old_text", "new_text")):
                 raise ValueError("Invalid text")
+            if "bold" in item and type(item["bold"]) is not bool:
+                raise ValueError("Bold must be a boolean")
+            if "width" in item and type(item["width"]) not in (int, float):
+                raise ValueError("Text width must be a number")
             edits.append(TextReplacement(**item))
     except (ValueError, TypeError, KeyError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc

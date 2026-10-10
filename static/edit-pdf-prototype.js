@@ -1,7 +1,8 @@
-const file=document.getElementById('file'),pages=document.getElementById('pages'),status=document.getElementById('status'),editor=document.getElementById('editor'),selection=document.getElementById('selection'),replacement=document.getElementById('replacement'),saveBtn=document.getElementById('save'),applyBtn=document.getElementById('apply'),undoBtn=document.getElementById('undo'),cancelBtn=document.getElementById('cancel');
+const file=document.getElementById('file'),pages=document.getElementById('pages'),status=document.getElementById('status'),editor=document.getElementById('editor'),selection=document.getElementById('selection'),replacement=document.getElementById('replacement'),saveBtn=document.getElementById('save'),applyBtn=document.getElementById('apply'),undoBtn=document.getElementById('undo'),cancelBtn=document.getElementById('cancel'),boldBtn=document.getElementById('bold');
 let changes=[],history=[],chosen=null,spanElements=new Map(),loadedFile=null,verifiedPdf=null,originalPages=[],requestId=0,busy=false;
 const changeKey=c=>[c.page,c.old_text,c.occurrence].join('\u0000');
 const copyChanges=value=>value.map(c=>({...c}));
+const isBold=span=>Boolean(span.flags&16)||/bold|demi|black/i.test(span.font);
 function position(record,bbox){
   const [x0,y0,x1,y1]=bbox,info=record.info,el=record.el;
   el.style.left=(x0/info.width*100)+'%';el.style.top=(y0/info.height*100)+'%';
@@ -17,12 +18,25 @@ function refresh(){
   saveBtn.disabled=busy||!loadedFile||(!changes.length&&!chosen);
   applyBtn.disabled=busy||!chosen;cancelBtn.disabled=busy;undoBtn.disabled=busy||!history.length;
   replacement.disabled=busy;file.disabled=busy;
+  boldBtn.disabled=busy||!chosen;boldBtn.setAttribute('aria-pressed',chosen?.bold?'true':'false');
 }
 function closeEditor(){
+  if(chosen)position(chosen.record,chosen.record.displayBBox);
   editor.append(replacement);editor.hidden=true;chosen=null;refresh();
 }
 function resizeInput(){
   replacement.style.height='auto';replacement.style.height=Math.max(24,replacement.scrollHeight+2)+'px';
+}
+function updateInputStyle(){
+  if(!chosen)return;
+  const {record,bold}=chosen,span=record.span;
+  const scale=record.el.closest('.page').clientWidth/record.info.width;
+  replacement.style.fontSize=(span.size*scale)+'px';
+  replacement.style.fontWeight=bold?'700':'400';resizeInput();
+}
+function toggleBold(){
+  if(busy||!chosen)return;
+  chosen.bold=!chosen.bold;updateInputStyle();refresh();replacement.focus();
 }
 async function responseError(response){
   let message='HTTP '+response.status;
@@ -50,10 +64,12 @@ async function renderChanges(next){
 async function showResult(next,result){
   const images=pages.querySelectorAll('.page > img');
   images.forEach((img,index)=>{img.src=result.images[index]});
-  for(const record of spanElements.values())position(record,record.span.bbox);
+  for(const record of spanElements.values()){
+    record.displayBBox=record.span.bbox;position(record,record.displayBBox);
+  }
   result.boxes.forEach((box,index)=>{
     const record=spanElements.get(changeKey(next[index]));
-    if(record)position(record,box.bbox);
+    if(record){record.displayBBox=box.bbox;position(record,record.displayBBox)}
   });
   await Promise.all(Array.from(images,img=>img.decode().catch(()=>{})));
   verifiedPdf=result.blob;
@@ -62,7 +78,9 @@ async function applyCurrent(){
   if(busy||!chosen)return false;
   const value=replacement.value.replace(/\r\n?/g,'\n'),key=changeKey(chosen.change);
   const next=changes.filter(c=>changeKey(c)!==key);
-  if(value!==chosen.change.old_text)next.push({...chosen.change,new_text:value});
+  if(value!==chosen.change.old_text||chosen.bold!==isBold(chosen.record.span)){
+    next.push({...chosen.change,new_text:value,bold:chosen.bold,width:chosen.width});
+  }
   busy=true;refresh();status.textContent='Applying text and rendering the PDF…';
   const current=requestId;
   try{
@@ -88,24 +106,24 @@ function buildPages(){
     for(const span of info.spans){
       const el=document.createElement('div');el.className='span';el.tabIndex=0;el.setAttribute('role','button');
       const change={page:index,old_text:span.text,new_text:span.text,occurrence:span.occurrence};
-      const record={el,span,info};position(record,span.bbox);spanElements.set(changeKey(change),record);
+      const record={el,span,info,displayBBox:span.bbox};position(record,span.bbox);spanElements.set(changeKey(change),record);
       const pick=async()=>{
         if(busy)return;
         if(chosen){
           if(changeKey(chosen.change)===changeKey(change))return;
           if(!await applyCurrent())return;
         }
-        chosen={change,record};editor.hidden=false;
+        const existing=changes.find(c=>changeKey(c)===changeKey(change));
+        const editBox=span.edit_bbox??span.bbox;
+        chosen={change,record,bold:existing?.bold??isBold(span),width:editBox[2]-editBox[0]};editor.hidden=false;
+        position(record,[editBox[0],record.displayBBox[1],editBox[2],record.displayBBox[3]]);
         selection.textContent='Page '+(index+1)+' · '+span.font+' · '+Number(span.size.toFixed(1))+' pt';
-        replacement.value=changes.find(c=>changeKey(c)===changeKey(change))?.new_text??span.text;
-        const scale=wrapper.clientWidth/info.width;
-        replacement.style.fontSize=(span.size*scale)+'px';
+        replacement.value=existing?.new_text??span.text;
         const fontName=span.font.toLowerCase();
         replacement.style.fontFamily=/mono|courier|consolas/.test(fontName)?'monospace':/sans|helvetica|arial|calibri|carlito/.test(fontName)?'sans-serif':(span.flags&4)?'serif':'sans-serif';
-        replacement.style.fontWeight=(span.flags&16)?'700':'400';
         replacement.style.fontStyle=(span.flags&2)?'italic':'normal';
         replacement.style.color='#'+span.color.toString(16).padStart(6,'0');
-        el.append(replacement);refresh();resizeInput();replacement.focus();replacement.select();
+        el.append(replacement);refresh();updateInputStyle();replacement.focus();replacement.select();
       };
       el.addEventListener('click',event=>{if(event.target===el)pick()});
       el.addEventListener('dblclick',event=>{if(event.target===el)pick()});
@@ -132,8 +150,11 @@ file.addEventListener('change',async()=>{
 replacement.addEventListener('input',resizeInput);
 replacement.addEventListener('keydown',event=>{
   if(event.key==='Enter'&&(event.ctrlKey||event.metaKey)){event.preventDefault();applyCurrent()}
+  if(event.key.toLowerCase()==='b'&&(event.ctrlKey||event.metaKey)){event.preventDefault();toggleBold()}
   if(event.key==='Escape'){event.preventDefault();closeEditor()}
 });
+boldBtn.addEventListener('click',toggleBold);
+window.addEventListener('resize',updateInputStyle);
 applyBtn.addEventListener('click',applyCurrent);
 cancelBtn.addEventListener('click',closeEditor);
 undoBtn.addEventListener('click',async()=>{
