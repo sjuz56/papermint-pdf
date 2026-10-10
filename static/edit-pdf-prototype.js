@@ -2,7 +2,7 @@ const saveBtn=document.getElementById('save');
 const file=document.getElementById('file'),pages=document.getElementById('pages'),status=document.getElementById('status'),editor=document.getElementById('editor'),selection=document.getElementById('selection'),replacement=document.getElementById('replacement'),exportBtn=document.getElementById('export');
 let changes=[],chosen=null,spanElements=new Map(),loadedFile=null,requestId=0,saving=false;
 const changeKey=c=>[c.page,c.old_text,c.occurrence].join('\u0000');
-const refresh=()=>{for(const [key,el] of spanElements){const change=changes.find(c=>changeKey(c)===key);el.style.outline=change?'2px solid #16a085':'';el.dataset.edited=change?'true':'false';el.title=change?change.new_text:el.dataset.original;}exportBtn.disabled=changes.length===0;saveBtn.disabled=saving||!loadedFile||changes.length===0;};
+const refresh=()=>{for(const [key,el] of spanElements){const change=changes.find(c=>changeKey(c)===key);el.style.outline=change?'2px solid #16a085':'';el.dataset.edited=change?'true':'false';el.title=change?change.new_text:el.dataset.original;el.textContent=change?change.new_text:'';el.style.color=change?'#152b43':'transparent';el.style.background=change?'white':'';el.style.whiteSpace='nowrap';el.style.overflow=change?'visible':'hidden';}exportBtn.disabled=changes.length===0;saveBtn.disabled=saving||!loadedFile||changes.length===0;};
 file.addEventListener('change',async()=>{
   const f=file.files[0];if(!f)return;
   const currentRequest=++requestId;loadedFile=null;
@@ -34,7 +34,7 @@ file.addEventListener('change',async()=>{
         div.style.left=(left/(pageInfo.width*scale)*100)+'%';div.style.top=(top/(pageInfo.height*scale)*100)+'%';
         div.style.width=(Math.max(4,width)/(pageInfo.width*scale)*100)+'%';div.style.height=(Math.max(5,height)/(pageInfo.height*scale)*100)+'%';
         const original=span.text,occurrence=span.occurrence;
-        div.title=original;div.dataset.original=original;
+        div.title=original;div.dataset.original=original;div.style.fontSize=Math.max(8,span.size*scale)+'px';div.style.fontFamily='Arial, sans-serif';div.style.lineHeight='1';
         spanElements.set(changeKey({page:number-1,old_text:original,occurrence}),div);
         const pick=()=>{
           chosen={page:number-1,old_text:original,new_text:original,occurrence,element:div};
@@ -53,7 +53,7 @@ document.getElementById('apply').addEventListener('click',()=>{
  changes=changes.filter(c=>!(c.page===chosen.page&&c.old_text===chosen.old_text&&c.occurrence===chosen.occurrence));
  if(replacement.value!==chosen.old_text)changes.push({page:chosen.page,old_text:chosen.old_text,new_text:replacement.value,occurrence:chosen.occurrence});
  refresh();
- status.textContent=`${changes.length} staged change(s). Download edited PDF to verify the saved output.`;
+ status.textContent=`${changes.length} change(s). Preview updated; download to verify the actual PDF.`;
 });
 document.getElementById('undo').addEventListener('click',()=>{
  const last=changes.pop();if(!last)return;
