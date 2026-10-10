@@ -6,10 +6,11 @@ import tempfile
 from pathlib import Path
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
-from fastapi.responses import Response
+from fastapi.responses import Response, FileResponse
 from starlette.concurrency import run_in_threadpool
 
-from papermint_edit_engine import PdfEditError, TextReplacement, replace_text, inspect_page, editing_bbox
+from papermint_edit_engine import (PdfEditError, TextReplacement, replace_text, inspect_page,
+                                   editing_bbox, editing_fonts, editing_font_path, EDIT_FONT_FAMILIES)
 
 router = APIRouter()
 MAX_EDIT_BYTES = 10 * 1024 * 1024
@@ -45,6 +46,8 @@ def _inspect_document(source: Path) -> dict:
             occurrences = {}
             spans = []
             blocks = inspect_page(doc[number])
+            if len(blocks) > MAX_PREVIEW_SPANS:
+                raise PdfEditError("Too many text spans on a page")
             drawings = doc[number].get_drawings()
             for raw in blocks:
                 span = {
@@ -122,7 +125,7 @@ async def edit_pdf_experimental(file: UploadFile = File(...), changes: str = For
         for item in parsed:
             required = {"page", "old_text", "new_text", "occurrence"}
             if (not isinstance(item, dict) or not required.issubset(item)
-                    or set(item) - required - {"bold", "width"}):
+                    or set(item) - required - {"bold", "width", "italic", "font_family", "font_size", "color"}):
                 raise ValueError("Invalid change format")
             if type(item["page"]) is not int or type(item["occurrence"]) is not int:
                 raise ValueError("Page and occurrence must be integers")
@@ -130,6 +133,14 @@ async def edit_pdf_experimental(file: UploadFile = File(...), changes: str = For
                 raise ValueError("Invalid text")
             if "bold" in item and type(item["bold"]) is not bool:
                 raise ValueError("Bold must be a boolean")
+            if "italic" in item and type(item["italic"]) is not bool:
+                raise ValueError("Italic must be a boolean")
+            if "font_family" in item and (not isinstance(item["font_family"], str)
+                    or item["font_family"] not in EDIT_FONT_FAMILIES):
+                raise ValueError("Unknown font family")
+            for field in ("font_size", "color"):
+                if field in item and type(item[field]) not in ((int, float) if field == "font_size" else (int,)):
+                    raise ValueError("Invalid " + field)
             if "width" in item and type(item["width"]) not in (int, float):
                 raise ValueError("Text width must be a number")
             edits.append(TextReplacement(**item))
@@ -166,3 +177,25 @@ async def edit_pdf_experimental(file: UploadFile = File(...), changes: str = For
                      "X-PDFaspect-Edit-Boxes": json.dumps(result["edit_boxes"]),
                      "X-PDFaspect-Font-Substitutions": str(len(result["font_substitutions"]))},
         )
+
+
+@router.get("/api/experimental/edit-pdf-fonts")
+def list_edit_fonts():
+    if os.getenv("PAPERMINT_ENABLE_EXPERIMENTAL_EDIT_PDF") != "1":
+        raise HTTPException(status_code=404, detail="Not available")
+    return {"fonts": editing_fonts()}
+
+
+@router.get("/api/experimental/edit-pdf-fonts/{family}/{variant}")
+def get_edit_font(family: str, variant: str):
+    if os.getenv("PAPERMINT_ENABLE_EXPERIMENTAL_EDIT_PDF") != "1":
+        raise HTTPException(status_code=404, detail="Not available")
+    variants = {"regular": (False, False), "bold": (True, False),
+                "italic": (False, True), "bold-italic": (True, True)}
+    if family not in EDIT_FONT_FAMILIES or variant not in variants:
+        raise HTTPException(status_code=404, detail="Font not available")
+    try:
+        path = editing_font_path(family, *variants[variant])
+    except PdfEditError as exc:
+        raise HTTPException(status_code=404, detail="Font not available") from exc
+    return FileResponse(path, media_type="font/ttf", headers={"Cache-Control": "public, max-age=86400"})

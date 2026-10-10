@@ -10,7 +10,7 @@ from urllib.request import urlopen
 from urllib.parse import urlparse
 
 import fitz
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import expect, sync_playwright
 
 ROOT = Path(__file__).resolve().parents[1]
 PORT = 18765
@@ -76,7 +76,7 @@ def main():
                     page.get_by_text("Preview shows the saved PDF.", exact=False).wait_for()
                     assert page.locator(".page > img").first.get_attribute("src") != original_image
 
-                    def download_text(formatted_text=None, bold=None):
+                    def download_text(formatted_text=None, bold=None, italic=None, font=None, size=None, color=None):
                         with page.expect_download(timeout=30000) as download_info:
                             page.locator("#save").click()
                         output_path = Path(directory) / ("mobile.pdf" if mobile else "desktop.pdf")
@@ -91,7 +91,16 @@ def main():
                                          for line in b.get("lines", []) for s in line["spans"]]
                                 match = next((s for s in spans if s["text"] == formatted_text), None)
                                 assert match, "Text was unexpectedly split across lines"
-                                assert bool(match["flags"] & 16) == bold, "PDF font weight differs from the editor"
+                                if bold is not None:
+                                    assert bool(match["flags"] & 16) == bold, "PDF font weight differs from the editor"
+                                if italic is not None:
+                                    assert bool(match["flags"] & 2) == italic, "PDF italic style differs from the editor"
+                                if font is not None:
+                                    assert match["font"] == font, match["font"]
+                                if size is not None:
+                                    assert abs(match["size"] - size) < 0.01, match["size"]
+                                if color is not None:
+                                    assert match["color"] == color, match["color"]
                             return edited[0].get_text()
 
                     result = download_text()
@@ -116,6 +125,69 @@ def main():
                     assert "Invoicenumber12" in "".join(result.split()) and "Příjem" not in result
 
                     short_target = page.locator(".span").nth(2)
+                    # Opening a block keeps a caret, so typing appends instead of erasing the word.
+                    short_target.click()
+                    expect(page.locator("#replacement")).to_be_focused()
+                    page.locator("#replacement").press("End")
+                    page.locator("#replacement").press("!")
+                    expect(page.locator("#replacement")).to_have_value("Hi!")
+                    page.locator(".page > img").click(position={"x": 20, "y": 400})
+                    page.get_by_text("Preview shows the saved PDF.", exact=False).wait_for()
+                    download_text("Hi!")
+                    page.locator("#undo").click()
+                    page.get_by_text("Previous PDF restored.", exact=False).wait_for()
+
+                    # Embed the same real font in both the typing field and exported PDF.
+                    for family, font in (("dejavu-serif", "DejaVuSerif-BoldItalic"),
+                                         ("liberation-mono", "LiberationMono-BoldItalic")):
+                        short_target.click()
+                        expect(page.locator("#font-family option")).to_have_count(7)
+                        page.locator("#replacement").fill("Příliš žluťoučký kůň")
+                        page.locator("#font-family").select_option(family)
+                        page.locator("#bold").click()
+                        if mobile:
+                            page.locator("#italic").click()
+                        else:
+                            page.locator("#replacement").press("Control+i")
+                        page.locator("#font-size").fill("15")
+                        page.locator("#font-color").evaluate("el => { el.value = '#2456a8'; el.dispatchEvent(new Event('input', {bubbles:true})); }")
+                        expect(page.locator("#apply")).to_be_enabled()
+                        assert "PDFaspect-" + family in page.locator("#replacement").evaluate("el => getComputedStyle(el).fontFamily")
+                        assert page.locator("#replacement").evaluate("el => getComputedStyle(el).fontStyle") == "italic"
+                        before_zoom = float(page.locator("#replacement").evaluate("el => parseFloat(getComputedStyle(el).fontSize)"))
+                        page.locator("#zoom").select_option("200")
+                        expect(page.locator("#apply")).to_be_enabled()
+                        assert float(page.locator("#replacement").evaluate("el => parseFloat(getComputedStyle(el).fontSize)")) > before_zoom
+                        assert page.locator("#pages").evaluate("el => el.scrollWidth > el.clientWidth")
+                        assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth"), "Zoom overflows the whole viewport"
+                        page.locator("#zoom").select_option("fit")
+                        expect(page.locator("#apply")).to_be_enabled()
+                        if qa_dir and family == "dejavu-serif":
+                            page.screenshot(path=str(Path(qa_dir) / ("mobile-fonts.png" if mobile else "desktop-fonts.png")), full_page=True)
+                        page.locator("#apply").click()
+                        page.get_by_text("Preview shows the saved PDF.", exact=False).wait_for()
+                        download_text("Příliš žluťoučký kůň", bold=True, italic=True, font=font, size=15, color=0x2456A8)
+                        page.locator("#undo").click()
+                        page.get_by_text("Previous PDF restored.", exact=False).wait_for()
+                        download_text("Hi", bold=False, italic=False, size=12, color=0)
+                        page.locator("#redo").click()
+                        page.get_by_text("PDF reapplied.", exact=False).wait_for()
+                        download_text("Příliš žluťoučký kůň", bold=True, italic=True, font=font, size=15, color=0x2456A8)
+                        short_target.click()
+                        expect(page.locator("#font-family")).to_have_value(family)
+                        expect(page.locator("#font-size")).to_have_value("15")
+                        expect(page.locator("#font-color")).to_have_value("#2456a8")
+                        expect(page.locator("#bold")).to_have_attribute("aria-pressed", "true")
+                        expect(page.locator("#italic")).to_have_attribute("aria-pressed", "true")
+                        before_invalid = page.locator(".page > img").first.get_attribute("src")
+                        page.locator("#font-size").fill("145")
+                        expect(page.locator("#apply")).to_be_disabled()
+                        expect(page.locator("#save")).to_be_disabled()
+                        assert page.locator(".page > img").first.get_attribute("src") == before_invalid
+                        page.locator("#cancel").click()
+                        page.locator("#undo").click()
+                        page.get_by_text("Previous PDF restored.", exact=False).wait_for()
+
                     short_target.click()
                     field_width = page.locator("#replacement").bounding_box()["width"]
                     assert field_width > (250 if mobile else 500), "Short words still have a narrow input box"
@@ -154,6 +226,37 @@ def main():
                     page.get_by_text("Previous PDF restored.", exact=False).wait_for()
                     download_text(sentence, bold=True)
 
+                    # Pointer resizing controls wrapping and survives reopening the selected block.
+                    short_target.click()
+                    handle = page.locator("#width-handle")
+                    maximum = float(handle.get_attribute("aria-valuemax"))
+                    scale = page.locator("#replacement").bounding_box()["width"] / maximum
+                    handle.scroll_into_view_if_needed()
+                    box = handle.bounding_box()
+                    page.mouse.move(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+                    page.mouse.down()
+                    page.mouse.move(box["x"] + box["width"] / 2 - (maximum - 200) * scale,
+                                    box["y"] + box["height"] / 2, steps=8)
+                    page.mouse.up()
+                    width = float(handle.get_attribute("aria-valuenow"))
+                    assert abs(width - 200) <= 2, width
+                    assert page.locator("#replacement").evaluate("""el => {
+                        const style = getComputedStyle(el), ctx = document.createElement('canvas').getContext('2d');
+                        ctx.font = style.font;
+                        return ctx.measureText(el.value).width > el.clientWidth;
+                    }"""), "Resized text field is still too wide to test wrapping"
+                    page.locator("#apply").click()
+                    page.get_by_text("Preview shows the saved PDF.", exact=False).wait_for()
+                    result = download_text()
+                    assert "".join(sentence.split()) in "".join(result.split()), result
+                    assert sentence not in result, "Export did not wrap to match the narrower field"
+                    short_target.click()
+                    assert abs(float(handle.get_attribute("aria-valuenow")) - width) <= 1
+                    page.locator("#cancel").click()
+                    page.locator("#undo").click()
+                    page.get_by_text("Previous PDF restored.", exact=False).wait_for()
+                    download_text(sentence, bold=True)
+
                     before_failure = page.locator(".page > img").first.get_attribute("src")
                     target.click()
                     page.locator("#replacement").fill("This replacement is far too long " * 20)
@@ -170,7 +273,7 @@ def main():
                     assert not errors, errors
                     page.close()
                 browser.close()
-                print("Browser smoke test passed on desktop and mobile: horizontal typing, bold toggle and shortcut, Czech, undo, wrapping, overflow, delete, and preview/export pixel equality")
+                print("Browser smoke test passed on desktop and mobile: caret typing, outside-click apply, real font families, bold/italic, size/color, zoom, resize, Czech, undo/redo, overflow, delete, and preview/export pixel equality")
         finally:
             if server:
                 server.terminate()

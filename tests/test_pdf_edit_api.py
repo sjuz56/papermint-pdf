@@ -156,6 +156,61 @@ class PdfEditApiTests(unittest.TestCase):
                     )
                     self.assertEqual(response.status_code, 422, response.text[:500])
 
+    def test_font_catalog_and_server_owned_font_downloads(self):
+        with patch.dict(os.environ, {"PAPERMINT_ENABLE_EXPERIMENTAL_EDIT_PDF": "1"}):
+            catalog = self.client.get("/api/experimental/edit-pdf-fonts")
+            self.assertEqual(catalog.status_code, 200)
+            fonts = catalog.json()["fonts"]
+            self.assertTrue(fonts)
+            for family in fonts:
+                for variant in ("regular", "bold", "italic", "bold-italic"):
+                    with self.subTest(family=family["id"], variant=variant):
+                        response = self.client.get("/api/experimental/edit-pdf-fonts/" + family["id"] + "/" + variant)
+                        self.assertEqual(response.status_code, 200)
+                        self.assertEqual(response.headers["content-type"], "font/ttf")
+                        self.assertGreater(len(response.content), 1000)
+                        font = fitz.Font(fontbuffer=response.content)
+                        self.assertTrue(font.has_glyph(ord("ř")))
+
+    def test_font_endpoints_are_feature_flagged_and_reject_unknown_ids(self):
+        with patch.dict(os.environ, {"PAPERMINT_ENABLE_EXPERIMENTAL_EDIT_PDF": "0"}):
+            self.assertEqual(self.client.get("/api/experimental/edit-pdf-fonts").status_code, 404)
+            self.assertEqual(self.client.get("/api/experimental/edit-pdf-fonts/dejavu-sans/regular").status_code, 404)
+        with patch.dict(os.environ, {"PAPERMINT_ENABLE_EXPERIMENTAL_EDIT_PDF": "1"}):
+            self.assertEqual(self.client.get("/api/experimental/edit-pdf-fonts/not-a-font/regular").status_code, 404)
+            self.assertEqual(self.client.get("/api/experimental/edit-pdf-fonts/dejavu-sans/not-a-variant").status_code, 404)
+
+    def test_font_family_size_italic_and_color_only_export(self):
+        with patch.dict(os.environ, {"PAPERMINT_ENABLE_EXPERIMENTAL_EDIT_PDF": "1"}):
+            response = self.client.post(
+                "/api/experimental/edit-pdf",
+                files={"file": ("test.pdf", io.BytesIO(sample_pdf()), "application/pdf")},
+                data={"changes": json.dumps([{"page": 0, "old_text": "Invoice 1234", "new_text": "Invoice 1234",
+                    "occurrence": 0, "width": 400, "font_family": "dejavu-serif", "font_size": 18,
+                    "bold": True, "italic": True, "color": 0x2456A8}])},
+            )
+            self.assertEqual(response.status_code, 200, response.text[:500])
+            with fitz.open(stream=response.content, filetype="pdf") as doc:
+                span = next(s for b in doc[0].get_text("dict")["blocks"]
+                            for line in b.get("lines", []) for s in line["spans"] if s["text"] == "Invoice 1234")
+                self.assertEqual(span["font"], "DejaVuSerif-BoldItalic")
+                self.assertAlmostEqual(span["size"], 18)
+                self.assertEqual(span["color"], 0x2456A8)
+
+    def test_reject_untrusted_font_and_style_payloads(self):
+        with patch.dict(os.environ, {"PAPERMINT_ENABLE_EXPERIMENTAL_EDIT_PDF": "1"}):
+            for options in ({"font_family": "../../etc/passwd"}, {"font_family": None},
+                            {"italic": 1}, {"font_size": float("inf")}, {"font_size": 200},
+                            {"color": "#2456A8"}, {"color": -1}):
+                with self.subTest(options=options):
+                    response = self.client.post(
+                        "/api/experimental/edit-pdf",
+                        files={"file": ("test.pdf", io.BytesIO(sample_pdf()), "application/pdf")},
+                        data={"changes": json.dumps([{"page": 0, "old_text": "Invoice 1234",
+                            "new_text": "Invoice 12", "occurrence": 0, **options}])},
+                    )
+                    self.assertEqual(response.status_code, 422, response.text[:500])
+
 
 if __name__ == "__main__":
     unittest.main()

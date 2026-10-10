@@ -6,7 +6,8 @@ from pathlib import Path
 
 import fitz
 
-from papermint_edit_engine import PdfEditError, TextReplacement, inspect_text, replace_text, inspect_page, editing_bbox
+from papermint_edit_engine import (PdfEditError, TextReplacement, inspect_text, replace_text,
+                                   inspect_page, editing_bbox, editing_fonts)
 
 
 class TestPdfTextEdit(unittest.TestCase):
@@ -477,6 +478,64 @@ class TestPdfTextEdit(unittest.TestCase):
     def test_reject_invalid_bold_and_width_values(self):
         for options in ({"bold": "true"}, {"width": True}, {"width": float("nan")},
                         {"width": float("inf")}, {"width": -10}, {"width": 0}):
+            with self.subTest(options=options), self.assertRaises(PdfEditError):
+                replace_text(self.source, self.output, [TextReplacement(0, "Invoice 1234", "Invoice 12", **options)])
+            self.assertFalse(Path(self.output).exists())
+
+    def test_every_available_font_and_style_exports_czech_text(self):
+        fonts = editing_fonts()
+        self.assertTrue(fonts, "No editor fonts are installed")
+        for family in fonts:
+            for bold, italic in ((False, False), (True, False), (False, True), (True, True)):
+                with self.subTest(family=family["id"], bold=bold, italic=italic):
+                    result = replace_text(self.source, self.output, [TextReplacement(
+                        0, "Invoice 1234", "Příliš žluťoučký kůň", width=400, font_family=family["id"],
+                        bold=bold, italic=italic, font_size=14, color=0x2456A8)])
+                    self.assertEqual(result["font_substitutions"], [])
+                    with fitz.open(self.output) as doc:
+                        span = next(s for b in doc[0].get_text("dict")["blocks"]
+                                    for line in b.get("lines", []) for s in line["spans"] if s["text"].startswith("Příliš"))
+                        self.assertEqual(span["text"], "Příliš žluťoučký kůň")
+                        self.assertEqual(bool(span["flags"] & 16), bold)
+                        self.assertEqual(bool(span["flags"] & 2), italic)
+                        self.assertEqual(span["color"], 0x2456A8)
+                        self.assertAlmostEqual(span["size"], 14)
+                        self.assertAlmostEqual(span["origin"][1], 100)
+                        self.assertIn("Total 500", doc[0].get_text())
+
+    def test_italic_only_change_preserves_original_font_family(self):
+        replace_text(self.source, self.output, [
+            TextReplacement(0, "Invoice 1234", "Invoice 1234", italic=True, width=400)
+        ])
+        with fitz.open(self.output) as doc:
+            span = next(s for b in doc[0].get_text("dict")["blocks"]
+                        for line in b.get("lines", []) for s in line["spans"] if s["text"] == "Invoice 1234")
+            # MuPDF embeds its Nimbus Sans equivalent for the Base14 Helvetica variant.
+            self.assertIn(span["font"], {"Helvetica-Oblique", "NimbusSans-Italic"})
+            self.assertTrue(span["flags"] & 2)
+            self.assertFalse(span["flags"] & 16)
+
+    def test_font_size_and_color_only_change_are_saved(self):
+        replace_text(self.source, self.output, [
+            TextReplacement(0, "Invoice 1234", "Invoice 1234", font_size=20, color=0xCC3344, width=400)
+        ])
+        with fitz.open(self.output) as doc:
+            span = next(s for b in doc[0].get_text("dict")["blocks"]
+                        for line in b.get("lines", []) for s in line["spans"] if s["text"] == "Invoice 1234")
+            self.assertAlmostEqual(span["size"], 20)
+            self.assertEqual(span["color"], 0xCC3344)
+            self.assertAlmostEqual(span["origin"][1], 100)
+
+    def test_selected_font_is_not_silently_replaced_for_missing_glyphs(self):
+        with self.assertRaisesRegex(PdfEditError, "selected font"):
+            replace_text(self.source, self.output, [TextReplacement(
+                0, "Invoice 1234", "漢字", font_family="dejavu-sans", width=400)])
+        self.assertFalse(Path(self.output).exists())
+
+    def test_reject_invalid_font_options_without_writing_output(self):
+        for options in ({"italic": "true"}, {"font_family": "../../etc/passwd"}, {"font_family": True},
+                        {"font_size": True}, {"font_size": float("nan")}, {"font_size": 0},
+                        {"font_size": 145}, {"color": "#ffffff"}, {"color": True}, {"color": 0x1000000}):
             with self.subTest(options=options), self.assertRaises(PdfEditError):
                 replace_text(self.source, self.output, [TextReplacement(0, "Invoice 1234", "Invoice 12", **options)])
             self.assertFalse(Path(self.output).exists())
