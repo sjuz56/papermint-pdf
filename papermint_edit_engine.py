@@ -1,13 +1,14 @@
-"""Experimental direct PDF text editing engine.
-
-Edits a selected text span using its exact PDF bounding box. Existing content is
-redacted (removed, not just painted over) before replacement. Complex layouts,
-embedded/subset fonts and line wrapping require explicit review.
-"""
+"""Direct editing of horizontal PDF text blocks, with verified atomic export."""
 from __future__ import annotations
 
 from dataclasses import dataclass
+import hashlib
+import os
 from pathlib import Path
+import re
+import statistics
+import tempfile
+
 import fitz
 
 
@@ -24,30 +25,201 @@ class PdfEditError(ValueError):
     pass
 
 
+def _style(span):
+    return (span["font"], round(span["size"], 2), span["color"], span.get("flags", 0), span.get("alpha", 255))
+
+
+def _block(members, lines, direction):
+    rect = fitz.Rect(members[0]["bbox"])
+    for member in members[1:]:
+        rect |= fitz.Rect(member["bbox"])
+    return {**members[0], "text": "\n".join(lines), "bbox": tuple(rect),
+            "members": members, "direction": direction}
+
+
+def inspect_page(page) -> list[dict]:
+    """Group adjacent left-aligned lines with one style into editable blocks.
+
+    Mixed styles and overlapping runs stay separate to preserve their formatting.
+    Inspection and export use the same grouping.
+    """
+    result = []
+    for raw_block in page.get_text("dict")["blocks"]:
+        members, texts, direction = [], [], (1, 0)
+        for line in raw_block.get("lines", []):
+            spans = [s for s in line["spans"] if s["text"].strip()]
+            if not spans:
+                continue
+            uniform = all(_style(s) == _style(spans[0]) for s in spans)
+            ordered = all(-0.1 <= b["bbox"][0] - a["bbox"][2] <= spans[0]["size"] * 0.75
+                          for a, b in zip(spans, spans[1:]))
+            line_dir = tuple(line.get("dir", (1, 0)))
+            joins = members and uniform and ordered and _style(members[0]) == _style(spans[0])
+            if joins:
+                gap = spans[0]["origin"][1] - members[-1]["origin"][1]
+                joins = (direction == line_dir and abs(spans[0]["bbox"][0] - members[0]["bbox"][0]) < 2
+                         and 0 < gap <= spans[0]["size"] * 2)
+            if members and not joins:
+                result.append(_block(members, texts, direction))
+                members, texts = [], []
+            if uniform and ordered:
+                members.extend(spans)
+                text = spans[0]["text"]
+                for previous, following in zip(spans, spans[1:]):
+                    if (following["bbox"][0] - previous["bbox"][2] > spans[0]["size"] * 0.2
+                            and not text.endswith(" ") and not following["text"].startswith(" ")):
+                        text += " "
+                    text += following["text"]
+                texts.append(text)
+                direction = line_dir
+            else:
+                result.extend(_block([s], [s["text"]], line_dir) for s in spans)
+        if members:
+            result.append(_block(members, texts, direction))
+    # Some generators emit every paragraph line as a separate PDF text object.
+    # Join neighbouring objects using the same style/alignment rules.
+    grouped = []
+    for block in result:
+        if grouped:
+            previous = grouped[-1]
+            gap = block["origin"][1] - previous["members"][-1]["origin"][1]
+            if (_style(previous) == _style(block) and previous["direction"] == block["direction"]
+                    and abs(previous["bbox"][0] - block["bbox"][0]) < 2
+                    and 0 < gap <= block["size"] * 2):
+                grouped[-1] = _block(previous["members"] + block["members"],
+                                     [previous["text"], block["text"]], previous["direction"])
+                continue
+        grouped.append(block)
+    return grouped
+
+
 def inspect_text(pdf_path: str, page_number: int) -> list[dict]:
-    """Return selectable spans with coordinates and approximate styling."""
     with fitz.open(pdf_path) as doc:
         if not 0 <= page_number < len(doc):
             raise PdfEditError("Page out of range")
-        spans = []
-        for block in doc[page_number].get_text("dict")["blocks"]:
-            for line in block.get("lines", []):
-                for span in line["spans"]:
-                    if span["text"].strip():
-                        spans.append({
-                            "text": span["text"],
-                            "bbox": list(span["bbox"]),
-                            "font": span["font"],
-                            "size": span["size"],
-                            "color": span["color"],
-                        })
-        return spans
+        return [{k: block[k] for k in ("text", "bbox", "font", "size", "color")}
+                for block in inspect_page(doc[page_number])]
+
+
+def _font_name(name):
+    return re.sub(r"[^a-z0-9]", "", re.sub(r"^[A-Z]{6}\+", "", name).lower())
+
+
+def _supports(font, text):
+    return all(font.has_glyph(ord(c)) for c in set(text) if not c.isspace())
+
+
+def _select_font(page, block, text, font_file):
+    if font_file:
+        path = Path(font_file)
+        if not path.is_file() or path.suffix.lower() not in {".ttf", ".otf"}:
+            raise PdfEditError("Provide an existing TTF or OTF font file")
+        font = fitz.Font(fontfile=str(path))
+        if not _supports(font, text):
+            raise PdfEditError("The selected font does not contain all replacement characters")
+        return font, True
+    original = _font_name(block["font"])
+    for xref, _, _, basefont, *_ in page.get_fonts(full=True):
+        if _font_name(basefont) != original:
+            continue
+        try:
+            buffer = page.parent.extract_font(xref)[3]
+            if buffer:
+                font = fitz.Font(fontbuffer=buffer)
+                if _supports(font, text):
+                    return font, False
+        except (RuntimeError, ValueError):
+            continue
+    base14 = {"helvetica": "helv", "helveticabold": "hebo",
+              "helveticaoblique": "heit", "helveticaboldoblique": "hebi",
+              "timesroman": "tiro", "timesbold": "tibo", "timesitalic": "tiit",
+              "timesbolditalic": "tibi", "courier": "cour", "courierbold": "cobo",
+              "courieroblique": "coit", "courierboldoblique": "cobi"}
+    if original in base14:
+        font = fitz.Font(base14[original])
+        if _supports(font, text):
+            return font, False
+    flags = block.get("flags", 0)
+    bold = bool(flags & 16) or "bold" in original
+    italic = bool(flags & 2) or "italic" in original or "oblique" in original
+    # Some PDFs set misleading serif flags on a subset of DejaVu Sans.
+    # Known family names and an installed full version take precedence.
+    if any(name in original for name in ("mono", "courier", "consolas")):
+        family = "Mono"
+    elif any(name in original for name in ("sans", "helvetica", "arial", "calibri", "carlito")):
+        family = "Sans"
+    elif any(name in original for name in ("serif", "times", "cambria", "caladea", "georgia")):
+        family = "Serif"
+    else:
+        family = "Mono" if flags & 8 else "Serif" if flags & 4 else "Sans"
+    variant = "BoldItalic" if bold and italic else "Bold" if bold else "Italic" if italic else "Regular"
+    roots = [Path("/usr/share/fonts/truetype/liberation2"), Path("/usr/share/fonts/truetype/liberation"),
+             Path("/usr/share/fonts/truetype/dejavu")]
+    runtime = os.getenv("CODEX_PRIMARY_RUNTIME_ROOT")
+    if runtime:
+        roots.append(Path(runtime) / "dependencies/native/libreoffice-headless/libreoffice/share/fonts/truetype")
+    filenames = [f"Liberation{family}-{variant}.ttf"]
+    dejavu_variant = "BoldOblique" if bold and italic else "Bold" if bold else "Oblique" if italic else ""
+    if family == "Serif":
+        dejavu_variant = dejavu_variant.replace("Oblique", "Italic")
+    filenames.append("DejaVu" + ("SansMono" if family == "Mono" else family)
+                     + ("-" + dejavu_variant if dejavu_variant else "") + ".ttf")
+    configured = os.getenv("PAPERMINT_EDIT_UNICODE_FONT")
+    original_file = re.sub(r"[^A-Za-z0-9_-]", "", re.sub(r"^[A-Z]{6}\+", "", block["font"])) + ".ttf"
+    candidates = (([Path(configured)] if configured else []) + [root / original_file for root in roots]
+                  + [root / name for root in roots for name in filenames])
+    for path in candidates:
+        if path.is_file():
+            font = fitz.Font(fontfile=str(path))
+            if _supports(font, text):
+                return font, True
+    font = fitz.Font("cjk")
+    if _supports(font, text):
+        return font, True
+    raise PdfEditError("No available font contains all replacement characters")
+
+
+def _wrap(text, font, size, width):
+    lines = []
+    for paragraph in text.split("\n"):
+        current = ""
+        for token in re.findall(r"\s+|\S+", paragraph):
+            if font.text_length(current + token, fontsize=size) <= width + 0.1:
+                current += token
+                continue
+            if current:
+                lines.append(current.rstrip())
+                current = ""
+            token = token.lstrip()
+            for char in token:
+                if font.text_length(current + char, fontsize=size) > width + 0.1:
+                    if not current:
+                        raise PdfEditError("A character is wider than the text block")
+                    lines.append(current)
+                    current = ""
+                current += char
+        lines.append(current.rstrip())
+    return lines
+
+
+def _compact(text):
+    return "".join(text.split())
+
+
+def _verify(doc, operations):
+    for op in operations:
+        extracted = doc[op["page"]].get_textbox(op["area"] + (-0.5, -0.5, 0.5, 0.5))
+        if _compact(extracted) != _compact(op["new_text"]):
+            raise PdfEditError("Replacement could not be verified in the output PDF")
 
 
 def replace_text(pdf_path: str, output_path: str, changes: list[TextReplacement]) -> dict:
-    """Replace whole selectable spans; fail safely on overflow.
+    """Remove original glyphs and reflow replacements without moving neighbours.
 
-    This prototype does not support replacing arbitrary substrings or scanned PDFs.
+    Text may grow downwards in the original block width while there is space.
+    Fonts, size, colour and the original baseline are retained where possible.
+    Missing subset-font glyphs use a disclosed fallback. Scans and rotated text
+    are not editable. Preflight every operation before removing any content.
     """
     if not changes:
         raise PdfEditError("No changes supplied")
@@ -56,9 +228,7 @@ def replace_text(pdf_path: str, output_path: str, changes: list[TextReplacement]
     with fitz.open(pdf_path) as doc:
         if doc.needs_pass:
             raise PdfEditError("Password-protected PDF is unsupported")
-        operations = []
-        # Inspect only pages being edited; large PDFs may contain many unrelated pages.
-        page_spans = {}
+        operations, page_blocks = [], {}
         for change in changes:
             if type(change.page) is not int or type(change.occurrence) is not int:
                 raise PdfEditError("Page and occurrence must be integers")
@@ -66,118 +236,85 @@ def replace_text(pdf_path: str, output_path: str, changes: list[TextReplacement]
                 raise PdfEditError("Page out of range")
             if not isinstance(change.old_text, str) or not isinstance(change.new_text, str):
                 raise PdfEditError("Replacement text must be strings")
-            if not change.old_text or not change.new_text.strip():
-                raise PdfEditError("Both old and new text must be nonempty")
-            if doc[change.page].rotation != 0:
-                raise PdfEditError("Editing rotated PDF pages is not supported yet")
-            if change.page not in page_spans:
-                page_spans[change.page] = inspect_page(doc[change.page])
-            matches = [s for s in page_spans[change.page]
-                       if s["text"] == change.old_text]
-            if change.occurrence < 0 or change.occurrence >= len(matches):
-                raise PdfEditError("Exact selectable text span not found")
-            span = matches[change.occurrence]
-            rect = fitz.Rect(span["bbox"])
-            operations.append((change.page, rect, change.new_text, span, change.font_file))
-        # Reject duplicate/overlapping edits before checking neighbouring spans.
-        # An edited span may otherwise be mistaken for an unrelated neighbour.
-        for i, (p, rect, _, _, _) in enumerate(operations):
-            if any(p == p2 and rect.intersects(rect2)
-                   for p2, rect2, _, _, _ in operations[:i]):
-                raise PdfEditError("Overlapping edits")
-        # PyMuPDF redaction can remove neighbouring glyphs when boxes intersect.
-        for p, rect, _, span, _ in operations:
-            for neighbour in page_spans[p]:
-                if neighbour is span:
-                    continue
-                if fitz.Rect(neighbour["bbox"]).intersects(rect):
-                    raise PdfEditError("Edit box overlaps neighbouring text")
-        # Preflight every edit before redacting any content. A supplied TTF/OTF
-        # supports Unicode including Czech characters; the default Helvetica
-        # remains suitable only for its supported WinAnsi character set.
-        for p, rect, new_text, span, font_file in operations:
-            if "\n" in new_text or "\r" in new_text:
-                raise PdfEditError("Multiline edits are not supported yet")
-            if any(ord(char) < 32 or ord(char) == 127 for char in new_text):
+            text = change.new_text.replace("\r\n", "\n").replace("\r", "\n")
+            if not change.old_text:
+                raise PdfEditError("Original text must be nonempty")
+            if any((ord(c) < 32 and c != "\n") or ord(c) == 127 for c in text):
                 raise PdfEditError("Control characters are not supported in replacement text")
-            if font_file:
-                selected_font_path = Path(font_file)
-                if not selected_font_path.is_file() or selected_font_path.suffix.lower() not in {".ttf", ".otf"}:
-                    raise PdfEditError("Provide an existing TTF or OTF font file")
-                font = fitz.Font(fontfile=str(selected_font_path))
-            else:
-                # Built-in Helvetica is not reliable for non-ASCII text.
-                # Require an embedded font for accented letters and symbols.
-                if any(ord(char) > 127 for char in new_text):
-                    raise PdfEditError("Supply a Unicode font_file for this text")
-                font = fitz.Font("helv")
-            if font.text_length(new_text, fontsize=span["size"]) > rect.width + 0.5:
-                raise PdfEditError("Replacement is wider than original text box")
-        for p, rect, _, _, _ in operations:
-            doc[p].add_redact_annot(rect, fill=(1, 1, 1), cross_out=False)
-        for p in {op[0] for op in operations}:
-            doc[p].apply_redactions(images=0, graphics=0, text=0)
-        for p, rect, new_text, span, font_file in operations:
-            c = span["color"]
-            rgb = ((c >> 16 & 255) / 255, (c >> 8 & 255) / 255, (c & 255) / 255)
-            baseline = fitz.Point(rect.x0, rect.y1 - max(0.5, span["size"] * 0.18))
-            if font_file:
-                # Register embedded font for this page. This does not guarantee
-                # an exact match with the original PDF's subset font.
-                import hashlib
-                fontname = "editfont_" + hashlib.sha256(str(Path(font_file).resolve()).encode()).hexdigest()[:12]
-                doc[p].insert_font(fontname=fontname, fontfile=font_file)
-            else:
-                fontname = "helv"
-            doc[p].insert_text(baseline, new_text, fontname=fontname,
-                               fontsize=span["size"], color=rgb, overlay=True)
-        # Validate the generated document before returning it to the user.
-        # Do not publish an output with missing replacement text or surviving
-        # original text in a replaced span.
-        for p, rect, new_text, span, _ in operations:
-            # Verify the specific edited area, not merely the whole page:
-            # another occurrence elsewhere must not mask a failed insertion.
-            nearby = fitz.Rect(rect.x0 - 2, rect.y0 - 3,
-                               rect.x1 + 2, rect.y1 + 3)
-            extracted = doc[p].get_textbox(nearby)
-            if new_text not in extracted:
-                raise PdfEditError("Replacement could not be verified in the output PDF")
-            # A new value may legitimately contain the old one as a substring.
-            # Redaction is verified by checking exact extracted text separately.
-            if span["text"] != new_text and extracted.strip() == span["text"]:
-                raise PdfEditError("Original text is still present in the edited area")
-        # Save to a temporary sibling file, then atomically publish only
-        # after all verification passes. Never leave a partial output behind.
-        import os
-        import tempfile
+            page = doc[change.page]
+            if page.rotation:
+                raise PdfEditError("Editing rotated PDF pages is not supported yet")
+            if any(a.type[0] == fitz.PDF_ANNOT_REDACT for a in page.annots() or []):
+                raise PdfEditError("Apply or remove existing redaction annotations before editing")
+            if change.page not in page_blocks:
+                page_blocks[change.page] = inspect_page(page)
+            matches = [b for b in page_blocks[change.page] if b["text"] == change.old_text]
+            if change.occurrence < 0 or change.occurrence >= len(matches):
+                raise PdfEditError("Exact selectable text block not found")
+            block = matches[change.occurrence]
+            if abs(block["direction"][0] - 1) > 0.001 or abs(block["direction"][1]) > 0.001:
+                raise PdfEditError("Rotated text blocks are not supported yet")
+            rect = fitz.Rect(block["bbox"])
+            font, substituted = _select_font(page, block, text, change.font_file)
+            size = block["size"]
+            origin = fitz.Point(block["origin"])
+            baselines = sorted(set(s["origin"][1] for s in block["members"]))
+            gaps = [b - a for a, b in zip(baselines, baselines[1:])]
+            lineheight = max(size * 1.2, size * (font.ascender - font.descender),
+                             statistics.median(gaps) if gaps else 0)
+            lines = _wrap(text, font, size, rect.width) if text.strip() else []
+            area = fitz.Rect(rect)
+            if lines:
+                area |= fitz.Rect(origin.x, origin.y - font.ascender * size, rect.x1,
+                                  origin.y + (len(lines) - 1) * lineheight - font.descender * size)
+            if not page.rect.contains(area):
+                raise PdfEditError("Replacement does not fit on the page")
+            operations.append({"page": change.page, "block": block, "area": area,
+                               "font": font, "lines": lines, "lineheight": lineheight,
+                               "new_text": text, "substituted": substituted})
+        for i, op in enumerate(operations):
+            if any(op["page"] == prev["page"] and op["area"].intersects(prev["area"])
+                   for prev in operations[:i]):
+                raise PdfEditError("Overlapping edits")
+            for neighbour in page_blocks[op["page"]]:
+                if neighbour is op["block"]:
+                    continue
+                if any(op["area"].intersects(fitz.Rect(s["bbox"])) for s in neighbour["members"]):
+                    raise PdfEditError("Replacement overlaps neighbouring text; shorten the text")
+        for op in operations:
+            for member in op["block"]["members"]:
+                doc[op["page"]].add_redact_annot(member["bbox"], fill=False, cross_out=False)
+        for number in {op["page"] for op in operations}:
+            doc[number].apply_redactions(images=0, graphics=0, text=0)
+        for op in operations:
+            if not op["lines"]:
+                continue
+            block, font = op["block"], op["font"]
+            fontname = "edit_" + hashlib.sha256(font.buffer).hexdigest()[:12]
+            page = doc[op["page"]]
+            page.insert_font(fontname=fontname, fontbuffer=font.buffer)
+            color = block["color"]
+            rgb = tuple((color >> shift & 255) / 255 for shift in (16, 8, 0))
+            x, y = block["origin"]
+            for index, line in enumerate(op["lines"]):
+                if line:
+                    page.insert_text((x, y + index * op["lineheight"]), line,
+                                     fontname=fontname, fontsize=block["size"], color=rgb,
+                                     fill_opacity=block.get("alpha", 255) / 255, overlay=True)
+        _verify(doc, operations)
         output = Path(output_path)
         output.parent.mkdir(parents=True, exist_ok=True)
-        fd, temporary_name = tempfile.mkstemp(
-            prefix=".pdfaspect-edit-", suffix=".pdf", dir=output.parent
-        )
+        fd, name = tempfile.mkstemp(prefix=".pdfaspect-edit-", suffix=".pdf", dir=output.parent)
         os.close(fd)
-        temporary = Path(temporary_name)
+        temporary = Path(name)
         try:
             doc.save(str(temporary), garbage=4, deflate=True)
-            # Validate the bytes that will actually be returned.
-            with fitz.open(str(temporary)) as saved:
-                for p, rect, new_text, span, _ in operations:
-                    nearby = fitz.Rect(rect.x0 - 2, rect.y0 - 3,
-                                       rect.x1 + 2, rect.y1 + 3)
-                    saved_text = saved[p].get_textbox(nearby)
-                    if new_text not in saved_text:
-                        raise PdfEditError("Saved PDF does not contain the replacement")
-                    if span["text"] != new_text and saved_text.strip() == span["text"]:
-                        raise PdfEditError("Saved PDF still contains original text in the edited area")
+            with fitz.open(temporary) as saved:
+                _verify(saved, operations)
             os.replace(temporary, output)
         finally:
             temporary.unlink(missing_ok=True)
-        return {"replacements": len(operations), "output": output_path}
-
-
-def inspect_page(page) -> list[dict]:
-    spans = []
-    for block in page.get_text("dict")["blocks"]:
-        for line in block.get("lines", []):
-            spans.extend(span for span in line["spans"] if span["text"].strip())
-    return spans
+        return {"replacements": len(operations), "output": output_path,
+                "edit_boxes": [{"page": op["page"], "bbox": list(op["area"])} for op in operations],
+                "font_substitutions": [{"original": op["block"]["font"], "replacement": op["font"].name}
+                                       for op in operations if op["substituted"] and op["lines"]]}

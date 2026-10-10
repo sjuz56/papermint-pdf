@@ -64,6 +64,24 @@ class PdfEditApiTests(unittest.TestCase):
                 self.assertIn("Total 500", text)
                 self.assertNotIn("Invoice 1234", text)
 
+    def test_longer_unicode_edit_returns_verified_pdf_and_block_geometry(self):
+        with patch.dict(os.environ, {"PAPERMINT_ENABLE_EXPERIMENTAL_EDIT_PDF": "1"}):
+            response = self.client.post(
+                "/api/experimental/edit-pdf",
+                files={"file": ("test.pdf", io.BytesIO(sample_pdf()), "application/pdf")},
+                data={"changes": json.dumps([
+                    {"page": 0, "old_text": "Invoice 1234", "new_text": "Příjem 12\nDruhý řádek", "occurrence": 0}
+                ])},
+            )
+            self.assertEqual(response.status_code, 200, response.text[:500])
+            boxes = json.loads(response.headers["x-pdfaspect-edit-boxes"])
+            self.assertEqual(len(boxes), 1)
+            self.assertEqual(boxes[0]["page"], 0)
+            self.assertGreater(boxes[0]["bbox"][3] - boxes[0]["bbox"][1], 25)
+            with fitz.open(stream=response.content, filetype="pdf") as doc:
+                self.assertIn("Příjem12Druhýřádek", "".join(doc[0].get_text().split()))
+                self.assertIn("Total 500", doc[0].get_text())
+
     def test_rotated_preview_rejected_early(self):
         with patch.dict(os.environ, {"PAPERMINT_ENABLE_EXPERIMENTAL_EDIT_PDF": "1"}):
             response = self.client.post(
