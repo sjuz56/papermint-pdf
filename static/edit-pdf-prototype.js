@@ -39,14 +39,15 @@ file.addEventListener('change',async()=>{
         const pick=()=>{
           chosen={page:number-1,old_text:original,new_text:original,occurrence,element:div};
           editor.hidden=false;selection.textContent=`Page ${number}: ${original}`;
-          replacement.value=changes.find(c=>c.page===number-1&&c.old_text===original&&c.occurrence===occurrence)?.new_text??original;replacement.focus();
+          replacement.value=changes.find(c=>c.page===number-1&&c.old_text===original&&c.occurrence===occurrence)?.new_text??original;replacement.focus();replacement.select();
         };
-        div.addEventListener('click',pick);div.addEventListener('keydown',e=>{if(e.key==='Enter')pick()});
+        div.addEventListener('click',pick);div.addEventListener('dblclick',pick);div.addEventListener('keydown',e=>{if(e.key==='Enter')pick()});
         wrapper.append(div);
       }
     }
   }catch(err){if(currentRequest===requestId)status.textContent='Unable to open PDF: '+err.message}
 });
+replacement.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();document.getElementById('apply').click();}});
 document.getElementById('apply').addEventListener('click',()=>{
  if(!chosen||!replacement.value.trim())return;
  changes=changes.filter(c=>!(c.page===chosen.page&&c.old_text===chosen.old_text&&c.occurrence===chosen.occurrence));
