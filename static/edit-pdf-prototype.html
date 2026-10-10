@@ -9,8 +9,8 @@ header{padding:16px 24px;background:#102b4b;color:white;display:flex;gap:20px;al
 header strong{font-size:21px}button,.upload{border:0;border-radius:8px;background:#f78d39;color:#152b43;padding:10px 14px;font-weight:700;cursor:pointer}
 button:disabled{opacity:.4;cursor:not-allowed}main{max-width:1000px;margin:20px auto;padding:0 16px}
 #pages{display:grid;gap:20px;justify-items:center}.page{position:relative;box-shadow:0 5px 24px #17304b33;background:white;max-width:100%;height:auto!important;aspect-ratio:var(--page-ratio)}
-.page img{display:block;max-width:100%}.span{position:absolute;cursor:text;outline:1px solid transparent;color:transparent;white-space:pre;overflow:hidden}
-.span:hover,.span:focus{outline:2px solid #fa8a2d;background:#fba65033}
+.page img{display:block;max-width:100%}.span{position:absolute;z-index:2;cursor:pointer;outline:1px solid transparent;color:transparent;white-space:pre;overflow:visible;min-height:22px;touch-action:manipulation}
+.span:hover,.span:focus,.span:active{outline:2px solid #fa8a2d;background:#fba65055}
 #editor{position:sticky;top:0;z-index:3;background:white;padding:14px;box-shadow:0 2px 12px #17304b20;border-radius:10px;margin-bottom:18px}
 textarea{display:block;box-sizing:border-box;width:100%;min-height:75px;margin:8px 0;padding:10px;font:inherit}
 #status{padding:12px 0}small{color:#516478}
