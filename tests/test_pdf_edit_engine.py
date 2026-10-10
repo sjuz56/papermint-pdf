@@ -495,7 +495,7 @@ class TestPdfTextEdit(unittest.TestCase):
                     with fitz.open(self.output) as doc:
                         span = next(s for b in doc[0].get_text("dict")["blocks"]
                                     for line in b.get("lines", []) for s in line["spans"] if s["text"].startswith("Příliš"))
-                        self.assertEqual(span["text"], "Příliš žluťoučký kůň")
+                        self.assertEqual(span["text"].replace("\u00a0", " "), "Příliš žluťoučký kůň")
                         self.assertEqual(bool(span["flags"] & 16), bold)
                         self.assertEqual(bool(span["flags"] & 2), italic)
                         self.assertEqual(span["color"], 0x2456A8)

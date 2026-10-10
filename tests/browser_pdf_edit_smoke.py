@@ -89,8 +89,9 @@ def main():
                             if formatted_text is not None:
                                 spans = [s for b in edited[0].get_text("dict")["blocks"]
                                          for line in b.get("lines", []) for s in line["spans"]]
-                                match = next((s for s in spans if s["text"] == formatted_text), None)
-                                assert match, "Text was unexpectedly split across lines"
+                                # Some installed TTF versions map the space glyph to NBSP during extraction.
+                                match = next((s for s in spans if s["text"].replace("\u00a0", " ") == formatted_text), None)
+                                assert match, "Expected text is missing or split: " + repr([(s["text"], s["font"], s["size"]) for s in spans])
                                 if bold is not None:
                                     assert bool(match["flags"] & 16) == bold, "PDF font weight differs from the editor"
                                 if italic is not None:
@@ -101,7 +102,7 @@ def main():
                                     assert abs(match["size"] - size) < 0.01, match["size"]
                                 if color is not None:
                                     assert match["color"] == color, match["color"]
-                            return edited[0].get_text()
+                            return edited[0].get_text().replace("\u00a0", " ")
 
                     result = download_text()
                     assert "Invoicenumber12" in "".join(result.split()), result
