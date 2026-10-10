@@ -4,11 +4,32 @@ const saveBtn=byId('save'),applyBtn=byId('apply'),undoBtn=byId('undo'),redoBtn=b
 const boldBtn=byId('bold'),italicBtn=byId('italic'),fontPicker=byId('font-family'),sizePicker=byId('font-size'),colorPicker=byId('font-color'),zoomPicker=byId('zoom'),widthHandle=byId('width-handle');
 let changes=[],history=[],future=[],chosen=null,spanElements=new Map(),loadedFile=null,verifiedPdf=null,originalPages=[],requestId=0,busy=false,fontLoading=false,fontError=false,fontToken=0;
 const fontLoads=new Map();
+const fontLabels=new Map(),fontSources=new Map(),clipboardType='application/x-pdfaspect-text+json';
+let documentId='',lastCopied=null,plainPasteUntil=0;
 const changeKey=c=>[c.page,c.old_text,c.occurrence].join('\u0000');
 const copyChanges=value=>value.map(c=>({...c}));
 const isBold=span=>Boolean(span.flags&16)||/bold|demi|black/i.test(span.font);
 const isItalic=span=>Boolean(span.flags&2)||/italic|oblique/i.test(span.font);
 const hexColor=value=>'#'+value.toString(16).padStart(6,'0');
+const sourceSpan=current=>spanElements.get(changeKey(current.fontSource??current.change))?.span??current.record.span;
+function knownFamily(name){
+  const normalized=name.replace(/^[A-Z]{6}\+/,'').replace(/[^a-z0-9]/gi,'').toLowerCase();
+  for(const [id,label] of [...fontLabels].sort((a,b)=>b[1].length-a[1].length)){
+    if(normalized.startsWith(label.replace(/[^a-z0-9]/gi,'').toLowerCase()))return id;
+  }
+  return null;
+}
+function syncFormatControls(){
+  fontPicker.querySelector('option[value="copied-original"]')?.remove();
+  if(chosen.fontSource){
+    const option=document.createElement('option');option.value='copied-original';
+    const name=sourceSpan(chosen).font;
+    option.textContent=(fontLabels.get(knownFamily(name))??name)+' (copied)';option.title=name;fontPicker.append(option);
+  }
+  fontPicker.value=chosen.fontSource?'copied-original':chosen.family;
+  sizePicker.value=Number(chosen.size.toFixed(2));sizePicker.setAttribute('aria-invalid','false');
+  colorPicker.value=hexColor(chosen.color);
+}
 function position(record,bbox){
   const [x0,y0,x1,y1]=bbox,info=record.info,el=record.el;
   el.style.left=(x0/info.width*100)+'%';el.style.top=(y0/info.height*100)+'%';
@@ -20,11 +41,12 @@ function draftChanges(){
   const next=copyChanges(changes),index=next.findIndex(c=>changeKey(c)===key);
   const changed=value!==span.text||chosen.bold!==isBold(span)||chosen.italic!==isItalic(span)||
     chosen.family!=='original'||Math.abs(chosen.size-span.size)>0.01||chosen.color!==span.color||
-    Math.abs(chosen.width-chosen.maxWidth)>0.01;
+    Math.abs(chosen.width-chosen.maxWidth)>0.01||Boolean(chosen.fontSource);
   if(changed){
     const change={...chosen.change,new_text:value,bold:chosen.bold,italic:chosen.italic,
       width:chosen.width,font_size:chosen.size,color:chosen.color};
     if(chosen.family!=='original')change.font_family=chosen.family;
+    if(chosen.fontSource)change.font_source={...chosen.fontSource};
     if(index<0)next.push(change);else next[index]=change;
   }else if(index>=0)next.splice(index,1);
   return next;
@@ -50,6 +72,7 @@ function closeEditor(){
   if(chosen)position(chosen.record,chosen.record.displayBBox);
   ++fontToken;fontLoading=false;fontError=false;
   editor.append(replacement,widthHandle);editor.hidden=true;chosen=null;refresh();
+  fontPicker.querySelector('option[value="copied-original"]')?.remove();
 }
 function resizeInput(){
   replacement.style.height='auto';replacement.style.height=Math.max(24,replacement.scrollHeight+2)+'px';
@@ -73,15 +96,16 @@ async function loadFont(family,bold,italic){
 }
 async function updateInputStyle(){
   if(!chosen)return;
-  const current=chosen,token=++fontToken,span=current.record.span;
+  const current=chosen,token=++fontToken,span=sourceSpan(current);
+  const displayFamily=current.family==='original'?(current.fontSource?knownFamily(span.font):null):current.family;
   const scale=current.record.el.closest('.page').clientWidth/current.record.info.width;
   replacement.style.fontSize=(current.size*scale)+'px';
   replacement.style.fontWeight=current.bold?'700':'400';replacement.style.fontStyle=current.italic?'italic':'normal';
   replacement.style.color=hexColor(current.color);
-  replacement.style.fontFamily=current.family==='original'?fallbackFamily(span):'"PDFaspect-'+current.family+'"';
-  fontError=false;fontLoading=current.family!=='original';refresh();resizeInput();
+  replacement.style.fontFamily=displayFamily?'"PDFaspect-'+displayFamily+'"':fallbackFamily(span);
+  fontError=false;fontLoading=Boolean(displayFamily);refresh();resizeInput();
   try{
-    if(fontLoading)await loadFont(current.family,current.bold,current.italic);
+    if(fontLoading)await loadFont(displayFamily,current.bold,current.italic);
     if(token!==fontToken||chosen!==current)return;
     fontLoading=false;resizeInput();refresh();
   }catch(err){
@@ -94,6 +118,69 @@ function toggleStyle(property){
   if(busy||!chosen)return;
   chosen[property]=!chosen[property];updateInputStyle();refresh();replacement.focus();
 }
+function copySelection(event){
+  if(!chosen||busy||!event.clipboardData)return;
+  const start=replacement.selectionStart,end=replacement.selectionEnd,text=replacement.value.slice(start,end);
+  if(!text)return;
+  const span=sourceSpan(chosen),source=spanElements.get(changeKey(chosen.fontSource??chosen.change));
+  const format={version:1,text,documentId,family:chosen.family,bold:chosen.bold,italic:chosen.italic,
+    size:chosen.size,color:chosen.color,fontName:span.font};
+  if(chosen.family==='original')format.sourceId=source.fontId;
+  const html=document.createElement('span');html.textContent=text;html.dataset.pdfaspectFormat=JSON.stringify(format);
+  const family=chosen.family==='original'?(fontLabels.get(knownFamily(span.font))??span.font.replace(/^[A-Z]{6}\+/,'')):fontLabels.get(chosen.family);
+  html.style.fontFamily=JSON.stringify(family);html.style.fontSize=chosen.size+'pt';
+  html.style.fontWeight=chosen.bold?'700':'400';html.style.fontStyle=chosen.italic?'italic':'normal';
+  html.style.color=hexColor(chosen.color);html.style.whiteSpace='pre-wrap';
+  event.clipboardData.setData('text/plain',text);event.clipboardData.setData('text/html',html.outerHTML);
+  try{event.clipboardData.setData(clipboardType,JSON.stringify(format))}catch{}
+  lastCopied=format;event.preventDefault();
+  if(event.type==='cut')insertClipboardText('');
+}
+function readCopiedFormat(data,text){
+  try{
+    const custom=data.getData(clipboardType),html=data.getData('text/html');
+    let format=custom?JSON.parse(custom):null;
+    if(!format&&html.length<=100000&&html.includes('data-pdfaspect-format')){
+      const template=document.createElement('template');template.innerHTML=html;
+      const node=template.content.querySelector('[data-pdfaspect-format]');
+      if(node)format=JSON.parse(node.getAttribute('data-pdfaspect-format'));
+    }
+    if(!format&&!html&&lastCopied?.text===text)format=lastCopied;
+    if(!format||format.version!==1||typeof format.text!=='string'||format.text.replace(/\r\n?/g,'\n')!==text||
+      typeof format.bold!=='boolean'||typeof format.italic!=='boolean'||
+      typeof format.size!=='number'||!Number.isFinite(format.size)||format.size<4||format.size>144||
+      !Number.isInteger(format.color)||format.color<0||format.color>0xffffff)return null;
+    if(format.family==='original'){
+      const source=fontSources.get(format.sourceId);
+      if(format.documentId===documentId&&source)return {...format,fontSource:{...source}};
+      const family=typeof format.fontName==='string'?knownFamily(format.fontName):null;
+      return family?{...format,family,fontSource:null}:null;
+    }
+    return fontLabels.has(format.family)?{...format,fontSource:null}:null;
+  }catch{return null}
+}
+function insertClipboardText(text){
+  const start=replacement.selectionStart,end=replacement.selectionEnd;
+  const available=replacement.maxLength-(replacement.value.length-(end-start));
+  text=text.slice(0,Math.max(0,available));replacement.focus();
+  // Native insertion keeps the browser's text undo history; setRangeText is the fallback.
+  const inserted=document.execCommand(text?'insertText':'delete',false,text);
+  if(!inserted){replacement.setRangeText(text,start,end,'end');replacement.dispatchEvent(new Event('input',{bubbles:true}))}
+  resizeInput();refresh();
+}
+replacement.addEventListener('copy',copySelection);replacement.addEventListener('cut',copySelection);
+replacement.addEventListener('paste',event=>{
+  if(!chosen||busy||!event.clipboardData)return;
+  const plain=performance.now()<plainPasteUntil;plainPasteUntil=0;
+  const text=event.clipboardData.getData('text/plain').replace(/\r\n?/g,'\n');
+  const format=plain?null:readCopiedFormat(event.clipboardData,text);
+  if(!format)return;
+  event.preventDefault();insertClipboardText(text);
+  Object.assign(chosen,{family:format.family,fontSource:format.fontSource??null,
+    bold:format.bold,italic:format.italic,size:format.size,color:format.color});
+  syncFormatControls();updateInputStyle();
+  status.textContent='Pasted with the source font and formatting. Ctrl+Shift+V pastes text only.';
+});
 async function responseError(response){
   let message='HTTP '+response.status;
   try{message=(await response.json()).detail||message}catch{}
@@ -166,7 +253,7 @@ function applyZoom(){
   updateInputStyle();
 }
 function buildPages(){
-  pages.replaceChildren();spanElements.clear();
+  pages.replaceChildren();spanElements.clear();fontSources.clear();
   originalPages.forEach((info,index)=>{
     const wrapper=document.createElement('div');wrapper.className='page';
     wrapper.style.setProperty('--page-ratio',info.width+'/'+info.height);
@@ -175,7 +262,8 @@ function buildPages(){
     for(const span of info.spans){
       const el=document.createElement('div');el.className='span';el.tabIndex=0;el.setAttribute('role','button');
       const change={page:index,old_text:span.text,new_text:span.text,occurrence:span.occurrence};
-      const record={el,span,info,displayBBox:span.bbox};position(record,span.bbox);spanElements.set(changeKey(change),record);
+      const record={el,span,info,displayBBox:span.bbox,fontId:crypto.randomUUID()};position(record,span.bbox);spanElements.set(changeKey(change),record);
+      fontSources.set(record.fontId,{page:index,old_text:span.text,occurrence:span.occurrence});
       const pick=async()=>{
         if(busy)return;
         if(chosen){
@@ -186,10 +274,11 @@ function buildPages(){
         const maxWidth=editBox[2]-editBox[0];
         chosen={change,record,bold:existing?.bold??isBold(span),italic:existing?.italic??isItalic(span),
           family:existing?.font_family??'original',size:existing?.font_size??span.size,
-          color:existing?.color??span.color,width:existing?.width??maxWidth,maxWidth};
+          color:existing?.color??span.color,width:existing?.width??maxWidth,maxWidth,
+          fontSource:existing?.font_source??null};
         editor.hidden=false;setWidth(chosen.width);
         selection.textContent='Page '+(index+1)+' · '+span.font;
-        fontPicker.value=chosen.family;sizePicker.value=Number(chosen.size.toFixed(2));colorPicker.value=hexColor(chosen.color);
+        syncFormatControls();
         replacement.value=existing?.new_text??span.text;
         el.append(replacement,widthHandle);
         widthHandle.setAttribute('aria-valuemin',Math.min(20,maxWidth));
@@ -216,7 +305,7 @@ file.addEventListener('change',async()=>{
     if(source.size>10*1024*1024)throw new Error('PDF exceeds the 10 MB editor limit.');
     status.textContent='Checking editable text…';
     const inspected=await inspect(source);if(current!==requestId)return;
-    loadedFile=source;originalPages=inspected.pages;buildPages();
+    loadedFile=source;documentId=crypto.randomUUID();originalPages=inspected.pages;buildPages();
     status.textContent='Loaded '+originalPages.length+' pages. Click or double-click text to edit directly.';
     if(!originalPages.some(p=>p.spans.length))status.textContent='No selectable text found. Scanned PDFs need OCR before editing.';
   }catch(err){if(current===requestId)status.textContent='Unable to open PDF: '+err.message}
@@ -224,6 +313,7 @@ file.addEventListener('change',async()=>{
 });
 replacement.addEventListener('input',()=>{resizeInput();refresh()});
 replacement.addEventListener('keydown',event=>{
+  if(event.key.toLowerCase()==='v'&&(event.ctrlKey||event.metaKey))plainPasteUntil=event.shiftKey?performance.now()+1000:0;
   if(event.key==='Enter'&&(event.ctrlKey||event.metaKey)){event.preventDefault();applyCurrent()}
   if(event.key.toLowerCase()==='b'&&(event.ctrlKey||event.metaKey)){event.preventDefault();toggleStyle('bold')}
   if(event.key.toLowerCase()==='i'&&(event.ctrlKey||event.metaKey)){event.preventDefault();toggleStyle('italic')}
@@ -233,7 +323,9 @@ boldBtn.addEventListener('click',()=>toggleStyle('bold'));
 italicBtn.addEventListener('click',()=>toggleStyle('italic'));
 fontPicker.addEventListener('change',async()=>{
   if(!chosen||busy)return;
-  chosen.family=fontPicker.value;await updateInputStyle();if(chosen)replacement.focus();
+  if(fontPicker.value==='copied-original')chosen.family='original';
+  else{chosen.family=fontPicker.value;chosen.fontSource=null}
+  syncFormatControls();await updateInputStyle();if(chosen)replacement.focus();
 });
 sizePicker.addEventListener('input',()=>{
   if(!chosen||busy)return;
@@ -296,6 +388,7 @@ saveBtn.addEventListener('click',async()=>{
     if(!response.ok)throw await responseError(response);
     const data=await response.json();
     for(const font of data.fonts){
+      fontLabels.set(font.id,font.label);
       const option=document.createElement('option');option.value=font.id;option.textContent=font.label;fontPicker.append(option);
     }
   }catch{status.textContent='Font choices are unavailable. You can still edit with the original font.'}

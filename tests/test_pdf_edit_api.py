@@ -211,6 +211,38 @@ class PdfEditApiTests(unittest.TestCase):
                     )
                     self.assertEqual(response.status_code, 422, response.text[:500])
 
+    def test_copied_original_font_can_be_exported_from_another_block(self):
+        with fitz.open() as doc:
+            page = doc.new_page()
+            page.insert_text((72, 100), "Serif source", fontsize=16, fontname="tiit")
+            page.insert_text((72, 180), "Target", fontsize=12)
+            source = doc.tobytes()
+        with patch.dict(os.environ, {"PAPERMINT_ENABLE_EXPERIMENTAL_EDIT_PDF": "1"}):
+            response = self.client.post(
+                "/api/experimental/edit-pdf", files={"file": ("test.pdf", source, "application/pdf")},
+                data={"changes": json.dumps([{"page": 0, "old_text": "Target", "new_text": "Copied title",
+                    "occurrence": 0, "width": 400, "font_size": 16, "italic": True, "color": 0x2456A8,
+                    "font_source": {"page": 0, "old_text": "Serif source", "occurrence": 0}}])})
+            self.assertEqual(response.status_code, 200, response.text[:500])
+            with fitz.open(stream=response.content, filetype="pdf") as doc:
+                span = next(s for b in doc[0].get_text("dict")["blocks"]
+                            for line in b.get("lines", []) for s in line["spans"] if s["text"] == "Copied title")
+                self.assertIn(span["font"], {"Times-Italic", "NimbusRoman-Italic"})
+                self.assertAlmostEqual(span["size"], 16)
+                self.assertEqual(span["color"], 0x2456A8)
+
+    def test_reject_untrusted_copied_font_payloads(self):
+        with patch.dict(os.environ, {"PAPERMINT_ENABLE_EXPERIMENTAL_EDIT_PDF": "1"}):
+            for source in (None, "../../etc/passwd", {"page": 0, "old_text": "Invoice 1234", "occurrence": 0,
+                           "font_file": "../../etc/passwd"}, {"page": 0, "old_text": "Missing", "occurrence": 0},
+                           {"page": 0, "old_text": "Invoice 1234", "occurrence": True}):
+                with self.subTest(source=source):
+                    response = self.client.post(
+                        "/api/experimental/edit-pdf", files={"file": ("test.pdf", sample_pdf(), "application/pdf")},
+                        data={"changes": json.dumps([{"page": 0, "old_text": "Total 500", "new_text": "Copied",
+                            "occurrence": 0, "width": 400, "font_source": source}])})
+                    self.assertEqual(response.status_code, 422, response.text[:500])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -13,6 +13,8 @@ import fitz
 from playwright.sync_api import expect, sync_playwright
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+from papermint_edit_engine import editing_font_path
 PORT = 18765
 BASE = os.getenv("PDFASPECT_EDITOR_BASE_URL", f"http://127.0.0.1:{PORT}").rstrip("/")
 
@@ -27,6 +29,8 @@ def main():
             page.insert_text((72, 140), "Total 500", fontsize=12)
             page.insert_text((72, 240), "Hi", fontsize=12)
             page.insert_text((72, 280), "Preserve this line", fontsize=12)
+            page.insert_text((72, 360), "Původní písmo", fontsize=17, fontname="sourcefont",
+                             fontfile=str(editing_font_path("dejavu-serif", True, True)), color=(0x33 / 255, 0x4C / 255, 0x66 / 255))
             doc.save(pdf_path)
 
         env = {**os.environ, "PAPERMINT_ENABLE_EXPERIMENTAL_EDIT_PDF": "1"}
@@ -62,6 +66,7 @@ def main():
                         viewport={"width": 390 if mobile else 1100, "height": 900},
                         is_mobile=mobile, has_touch=mobile, ignore_https_errors=not bool(server))
                     errors = []
+                    page.context.grant_permissions(["clipboard-read", "clipboard-write"], origin=BASE)
                     page.on("pageerror", lambda error: errors.append(str(error)))
                     page.goto(BASE + "/static/edit-pdf-prototype.html")
                     page.locator("#file").set_input_files(str(pdf_path))
@@ -76,7 +81,7 @@ def main():
                     page.get_by_text("Preview shows the saved PDF.", exact=False).wait_for()
                     assert page.locator(".page > img").first.get_attribute("src") != original_image
 
-                    def download_text(formatted_text=None, bold=None, italic=None, font=None, size=None, color=None):
+                    def download_text(formatted_text=None, bold=None, italic=None, font=None, size=None, color=None, baseline=None):
                         with page.expect_download(timeout=30000) as download_info:
                             page.locator("#save").click()
                         output_path = Path(directory) / ("mobile.pdf" if mobile else "desktop.pdf")
@@ -90,7 +95,8 @@ def main():
                                 spans = [s for b in edited[0].get_text("dict")["blocks"]
                                          for line in b.get("lines", []) for s in line["spans"]]
                                 # Some installed TTF versions map the space glyph to NBSP during extraction.
-                                match = next((s for s in spans if s["text"].replace("\u00a0", " ") == formatted_text), None)
+                                match = next((s for s in spans if s["text"].replace("\u00a0", " ") == formatted_text
+                                              and (baseline is None or abs(s["origin"][1] - baseline) < 0.01)), None)
                                 assert match, "Expected text is missing or split: " + repr([(s["text"], s["font"], s["size"]) for s in spans])
                                 if bold is not None:
                                     assert bool(match["flags"] & 16) == bold, "PDF font weight differs from the editor"
@@ -126,6 +132,84 @@ def main():
                     assert "Invoicenumber12" in "".join(result.split()) and "Příjem" not in result
 
                     short_target = page.locator(".span").nth(2)
+                    original_source = page.locator(".span").nth(4)
+                    original_source.click()
+                    page.locator("#replacement").press("Control+a")
+                    page.locator("#replacement").press("Control+c")
+                    clipboard = page.evaluate("""async () => {
+                        const item = (await navigator.clipboard.read())[0];
+                        return {text: await (await item.getType('text/plain')).text(),
+                                html: await (await item.getType('text/html')).text()};
+                    }""")
+                    assert clipboard["text"] == "Původní písmo"
+                    assert 'font-family:' in clipboard["html"] and '17pt' in clipboard["html"]
+                    assert 'data-pdfaspect-format' in clipboard["html"]
+                    page.locator("#replacement").evaluate("el => el.setSelectionRange(0, 7)")
+                    page.locator("#replacement").press("Control+c")
+                    partial_html = page.evaluate("async () => (await (await navigator.clipboard.read())[0].getType('text/html')).text()")
+                    assert "Původní písmo" not in partial_html, "Copy leaked unselected text in hidden clipboard metadata"
+                    page.locator("#replacement").press("Control+a")
+                    page.locator("#replacement").press("Control+c")
+                    short_target.click()
+                    page.locator("#replacement").press("Control+a")
+                    page.locator("#replacement").press("Control+v")
+                    expect(page.locator("#replacement")).to_have_value("Původní písmo")
+                    expect(page.locator("#font-family")).to_have_value("copied-original")
+                    expect(page.locator("#font-size")).to_have_value("17")
+                    expect(page.locator("#font-color")).to_have_value("#334c66")
+                    expect(page.locator("#bold")).to_have_attribute("aria-pressed", "true")
+                    expect(page.locator("#italic")).to_have_attribute("aria-pressed", "true")
+                    expect(page.locator("#apply")).to_be_enabled()
+                    if qa_dir:
+                        page.screenshot(path=str(Path(qa_dir) / ("mobile-paste.png" if mobile else "desktop-paste.png")), full_page=True)
+                    page.locator("#apply").click()
+                    page.get_by_text("Preview shows the saved PDF.", exact=False).wait_for()
+                    download_text("Původní písmo", bold=True, italic=True, font="DejaVuSerif-BoldItalic", size=17, color=0x334C66, baseline=240)
+                    page.locator("#undo").click()
+                    page.get_by_text("Previous PDF restored.", exact=False).wait_for()
+                    download_text("Hi", bold=False, italic=False, size=12, baseline=240)
+                    page.locator("#redo").click()
+                    page.get_by_text("PDF reapplied.", exact=False).wait_for()
+                    short_target.click()
+                    expect(page.locator("#font-family")).to_have_value("copied-original")
+                    page.locator("#cancel").click()
+                    page.locator("#undo").click()
+                    page.get_by_text("Previous PDF restored.", exact=False).wait_for()
+
+                    # Mobile clipboards that keep only text still retain this editor's copied font.
+                    short_target.click()
+                    page.locator("#replacement").press("Control+a")
+                    page.locator("#replacement").evaluate("""el => {
+                        const data = new DataTransfer(); data.setData('text/plain', 'Původní písmo');
+                        el.dispatchEvent(new ClipboardEvent('paste', {clipboardData:data, bubbles:true, cancelable:true}));
+                    }""")
+                    expect(page.locator("#replacement")).to_have_value("Původní písmo")
+                    expect(page.locator("#font-family")).to_have_value("copied-original")
+                    page.locator("#cancel").click()
+
+                    # The same rich clipboard can intentionally be pasted as plain text.
+                    short_target.click()
+                    page.locator("#replacement").press("Control+a")
+                    page.locator("#replacement").press("Control+Shift+v")
+                    expect(page.locator("#replacement")).to_have_value("Původní písmo")
+                    expect(page.locator("#font-family")).to_have_value("original")
+                    expect(page.locator("#font-size")).to_have_value("12")
+                    expect(page.locator("#bold")).to_have_attribute("aria-pressed", "false")
+                    page.locator("#apply").click()
+                    page.get_by_text("Preview shows the saved PDF.", exact=False).wait_for()
+                    download_text("Původní písmo", bold=False, italic=False, size=12, color=0, baseline=240)
+                    page.locator("#undo").click()
+                    page.get_by_text("Previous PDF restored.", exact=False).wait_for()
+
+                    # Cut uses the same font metadata and retains native text undo.
+                    original_source.click()
+                    page.locator("#replacement").press("Control+a")
+                    page.locator("#replacement").press("Control+x")
+                    expect(page.locator("#replacement")).to_have_value("")
+                    page.locator("#replacement").press("Control+z")
+                    expect(page.locator("#replacement")).to_have_value("Původní písmo")
+                    page.locator("#cancel").click()
+
                     # Opening a block keeps a caret, so typing appends instead of erasing the word.
                     short_target.click()
                     expect(page.locator("#replacement")).to_be_focused()
@@ -180,6 +264,23 @@ def main():
                         expect(page.locator("#font-color")).to_have_value("#2456a8")
                         expect(page.locator("#bold")).to_have_attribute("aria-pressed", "true")
                         expect(page.locator("#italic")).to_have_attribute("aria-pressed", "true")
+                        # A partial selection also carries the chosen family to another block.
+                        page.locator("#replacement").evaluate("el => el.setSelectionRange(0, 6)")
+                        page.locator("#replacement").press("Control+c")
+                        destination = page.locator(".span").nth(3)
+                        destination.click()
+                        page.locator("#replacement").press("Control+a")
+                        page.locator("#replacement").press("Control+v")
+                        expect(page.locator("#replacement")).to_have_value("Příliš")
+                        expect(page.locator("#font-family")).to_have_value(family)
+                        expect(page.locator("#font-size")).to_have_value("15")
+                        expect(page.locator("#apply")).to_be_enabled()
+                        page.locator("#apply").click()
+                        page.get_by_text("Preview shows the saved PDF.", exact=False).wait_for()
+                        download_text("Příliš", bold=True, italic=True, font=font, size=15, color=0x2456A8, baseline=280)
+                        page.locator("#undo").click()
+                        page.get_by_text("Previous PDF restored.", exact=False).wait_for()
+                        short_target.click()
                         before_invalid = page.locator(".page > img").first.get_attribute("src")
                         page.locator("#font-size").fill("145")
                         expect(page.locator("#apply")).to_be_disabled()
@@ -274,7 +375,7 @@ def main():
                     assert not errors, errors
                     page.close()
                 browser.close()
-                print("Browser smoke test passed on desktop and mobile: caret typing, outside-click apply, real font families, bold/italic, size/color, zoom, resize, Czech, undo/redo, overflow, delete, and preview/export pixel equality")
+                print("Browser smoke test passed on desktop and mobile: native copy/cut/paste, original and selected font preservation, plain-text paste, caret typing, font styles, zoom, resize, Czech, undo/redo, overflow, delete, and preview/export pixel equality")
         finally:
             if server:
                 server.terminate()

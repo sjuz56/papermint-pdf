@@ -26,10 +26,20 @@ class TextReplacement:
     font_family: str | None = None
     font_size: float | None = None
     color: int | None = None
+    font_source: dict | None = None
 
 
 class PdfEditError(ValueError):
     pass
+
+
+def validate_font_source(source):
+    """A copied original font is identified by a text block in this PDF only."""
+    if (not isinstance(source, dict) or set(source) != {"page", "old_text", "occurrence"}
+            or type(source["page"]) is not int or source["page"] < 0
+            or type(source["occurrence"]) is not int or source["occurrence"] < 0
+            or not isinstance(source["old_text"], str) or not 1 <= len(source["old_text"]) <= 2000):
+        raise PdfEditError("Invalid copied font source")
 
 
 EDIT_FONT_FAMILIES = {
@@ -355,6 +365,10 @@ def replace_text(pdf_path: str, output_path: str, changes: list[TextReplacement]
             if change.font_family is not None and (not isinstance(change.font_family, str)
                     or change.font_family not in EDIT_FONT_FAMILIES):
                 raise PdfEditError("Unknown font family")
+            if change.font_source is not None:
+                validate_font_source(change.font_source)
+                if change.font_family is not None or change.font_file is not None:
+                    raise PdfEditError("Choose either a font family or a copied original font")
             if change.font_size is not None and (type(change.font_size) not in (int, float)
                     or not math.isfinite(change.font_size) or not 4 <= change.font_size <= 144):
                 raise PdfEditError("Font size must be between 4 and 144 points")
@@ -382,7 +396,20 @@ def replace_text(pdf_path: str, output_path: str, changes: list[TextReplacement]
             if abs(block["direction"][0] - 1) > 0.001 or abs(block["direction"][1]) > 0.001:
                 raise PdfEditError("Rotated text blocks are not supported yet")
             rect = fitz.Rect(block["bbox"])
-            font, substituted = _select_font(page, block, text, change.font_file, change.bold, change.italic, change.font_family)
+            font_page, font_block = page, block
+            if change.font_source is not None:
+                source = change.font_source
+                if source["page"] >= len(doc):
+                    raise PdfEditError("Copied font page out of range")
+                font_page = doc[source["page"]]
+                if source["page"] not in page_blocks:
+                    page_blocks[source["page"]] = inspect_page(font_page)
+                source_matches = [b for b in page_blocks[source["page"]] if b["text"] == source["old_text"]]
+                if source["occurrence"] >= len(source_matches):
+                    raise PdfEditError("Copied font source text block not found")
+                font_block = source_matches[source["occurrence"]]
+            font, substituted = _select_font(font_page, font_block, text, change.font_file,
+                                             change.bold, change.italic, change.font_family)
             width = rect.width if change.width is None else change.width
             if change.width is not None:
                 available = editing_bbox(page, block, page_blocks[change.page])[2] - rect.x0
@@ -405,7 +432,8 @@ def replace_text(pdf_path: str, output_path: str, changes: list[TextReplacement]
             operations.append({"page": change.page, "block": block, "area": area,
                                "font": font, "lines": lines, "lineheight": lineheight,
                                "new_text": text, "substituted": substituted, "size": size,
-                               "color": block["color"] if change.color is None else change.color})
+                               "color": block["color"] if change.color is None else change.color,
+                               "source_font": font_block["font"]})
         for i, op in enumerate(operations):
             if any(op["page"] == prev["page"] and op["area"].intersects(prev["area"])
                    for prev in operations[:i]):
@@ -450,5 +478,5 @@ def replace_text(pdf_path: str, output_path: str, changes: list[TextReplacement]
             temporary.unlink(missing_ok=True)
         return {"replacements": len(operations), "output": output_path,
                 "edit_boxes": [{"page": op["page"], "bbox": list(op["area"])} for op in operations],
-                "font_substitutions": [{"original": op["block"]["font"], "replacement": op["font"].name}
+                "font_substitutions": [{"original": op["source_font"], "replacement": op["font"].name}
                                        for op in operations if op["substituted"] and op["lines"]]}

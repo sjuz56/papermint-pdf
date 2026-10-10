@@ -7,7 +7,7 @@ from pathlib import Path
 import fitz
 
 from papermint_edit_engine import (PdfEditError, TextReplacement, inspect_text, replace_text,
-                                   inspect_page, editing_bbox, editing_fonts)
+                                   inspect_page, editing_bbox, editing_fonts, editing_font_path)
 
 
 class TestPdfTextEdit(unittest.TestCase):
@@ -539,6 +539,65 @@ class TestPdfTextEdit(unittest.TestCase):
             with self.subTest(options=options), self.assertRaises(PdfEditError):
                 replace_text(self.source, self.output, [TextReplacement(0, "Invoice 1234", "Invoice 12", **options)])
             self.assertFalse(Path(self.output).exists())
+
+    def test_copied_embedded_font_survives_source_deletion_and_cross_page_paste(self):
+        with fitz.open() as doc:
+            page = doc.new_page()
+            page.insert_text((72, 100), "Original serif", fontsize=18, fontname="sourcefont",
+                             fontfile=str(editing_font_path("dejavu-serif", True, True)), color=(0.2, 0.3, 0.4))
+            second = doc.new_page()
+            second.insert_text((72, 200), "Target", fontsize=10)
+            doc.save(self.source)
+        result = replace_text(self.source, self.output, [
+            TextReplacement(0, "Original serif", ""),
+            TextReplacement(1, "Target", "Příliš žluťoučký kůň", width=400, font_size=18,
+                            bold=True, italic=True, color=0x334C66,
+                            font_source={"page": 0, "old_text": "Original serif", "occurrence": 0})
+        ])
+        self.assertEqual(result["font_substitutions"], [])
+        with fitz.open(self.output) as doc:
+            self.assertNotIn("Original serif", doc[0].get_text())
+            span = next(s for b in doc[1].get_text("dict")["blocks"]
+                        for line in b.get("lines", []) for s in line["spans"])
+            self.assertEqual(span["font"], "DejaVuSerif-BoldItalic")
+            self.assertEqual(span["text"], "Příliš žluťoučký kůň")
+            self.assertAlmostEqual(span["size"], 18)
+            self.assertEqual(span["color"], 0x334C66)
+            self.assertAlmostEqual(span["origin"][1], 200)
+
+    def test_copied_base14_font_preserves_source_family_in_another_block(self):
+        with fitz.open() as doc:
+            page = doc.new_page()
+            page.insert_text((72, 100), "Serif source", fontsize=16, fontname="tiit")
+            page.insert_text((72, 180), "Target", fontsize=12)
+            doc.save(self.source)
+        replace_text(self.source, self.output, [TextReplacement(
+            0, "Target", "Copied title", width=400, italic=True, font_size=16,
+            font_source={"page": 0, "old_text": "Serif source", "occurrence": 0})])
+        with fitz.open(self.output) as doc:
+            span = next(s for b in doc[0].get_text("dict")["blocks"]
+                        for line in b.get("lines", []) for s in line["spans"] if s["text"] == "Copied title")
+            self.assertIn(span["font"], {"Times-Italic", "NimbusRoman-Italic"})
+            self.assertTrue(span["flags"] & 2)
+            self.assertAlmostEqual(span["origin"][1], 180)
+
+    def test_reject_invalid_copied_font_references_without_writing_output(self):
+        for source in ("/etc/passwd", {}, {"page": 0, "old_text": "Invoice 1234", "occurrence": 0, "font_file": "/etc/passwd"},
+                       {"page": True, "old_text": "Invoice 1234", "occurrence": 0},
+                       {"page": -1, "old_text": "Invoice 1234", "occurrence": 0},
+                       {"page": 99, "old_text": "Invoice 1234", "occurrence": 0},
+                       {"page": 0, "old_text": "Missing", "occurrence": 0},
+                       {"page": 0, "old_text": "Invoice 1234", "occurrence": 99}):
+            with self.subTest(source=source), self.assertRaises(PdfEditError):
+                replace_text(self.source, self.output, [TextReplacement(0, "Total 500", "Copied", width=400, font_source=source)])
+            self.assertFalse(Path(self.output).exists())
+
+    def test_reject_ambiguous_font_family_and_copied_font_source(self):
+        with self.assertRaisesRegex(PdfEditError, "either"):
+            replace_text(self.source, self.output, [TextReplacement(
+                0, "Total 500", "Copied", width=400, font_family="dejavu-serif",
+                font_source={"page": 0, "old_text": "Invoice 1234", "occurrence": 0})])
+        self.assertFalse(Path(self.output).exists())
 
 
 if __name__ == "__main__":

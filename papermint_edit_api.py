@@ -10,7 +10,8 @@ from fastapi.responses import Response, FileResponse
 from starlette.concurrency import run_in_threadpool
 
 from papermint_edit_engine import (PdfEditError, TextReplacement, replace_text, inspect_page,
-                                   editing_bbox, editing_fonts, editing_font_path, EDIT_FONT_FAMILIES)
+                                   editing_bbox, editing_fonts, editing_font_path, EDIT_FONT_FAMILIES,
+                                   validate_font_source)
 
 router = APIRouter()
 MAX_EDIT_BYTES = 10 * 1024 * 1024
@@ -125,7 +126,7 @@ async def edit_pdf_experimental(file: UploadFile = File(...), changes: str = For
         for item in parsed:
             required = {"page", "old_text", "new_text", "occurrence"}
             if (not isinstance(item, dict) or not required.issubset(item)
-                    or set(item) - required - {"bold", "width", "italic", "font_family", "font_size", "color"}):
+                    or set(item) - required - {"bold", "width", "italic", "font_family", "font_size", "color", "font_source"}):
                 raise ValueError("Invalid change format")
             if type(item["page"]) is not int or type(item["occurrence"]) is not int:
                 raise ValueError("Page and occurrence must be integers")
@@ -138,6 +139,8 @@ async def edit_pdf_experimental(file: UploadFile = File(...), changes: str = For
             if "font_family" in item and (not isinstance(item["font_family"], str)
                     or item["font_family"] not in EDIT_FONT_FAMILIES):
                 raise ValueError("Unknown font family")
+            if "font_source" in item:
+                validate_font_source(item["font_source"])
             for field in ("font_size", "color"):
                 if field in item and type(item[field]) not in ((int, float) if field == "font_size" else (int,)):
                     raise ValueError("Invalid " + field)
