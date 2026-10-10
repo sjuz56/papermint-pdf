@@ -8,6 +8,12 @@ from papermint_edit_api import router
 ROOT = Path(__file__).resolve().parents[1]
 app = FastAPI()
 app.include_router(router)
+
+
+@app.get("/", include_in_schema=False)
+def editor_home():
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url="/static/edit-pdf-prototype.html", status_code=307)
 app.mount("/static", StaticFiles(directory=ROOT / "static"), name="static")
 
 
