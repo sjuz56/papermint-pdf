@@ -46,6 +46,12 @@ COPY requirements.txt ./
 RUN python -m pip install --upgrade pip \
     && python -m pip install -r requirements.txt
 
+# Complete the editor's DejaVu families with their italic variants.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends fonts-dejavu-extra \
+    && fc-cache -f \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY . .
 
 EXPOSE 10000
