@@ -1,0 +1,604 @@
+"""Regression tests for the experimental direct text-edit engine."""
+import tempfile
+import os
+import unittest
+from pathlib import Path
+
+import fitz
+
+from papermint_edit_engine import (PdfEditError, TextReplacement, inspect_text, replace_text,
+                                   inspect_page, editing_bbox, editing_fonts, editing_font_path)
+
+
+class TestPdfTextEdit(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.source = str(Path(self.temp.name) / "source.pdf")
+        self.output = str(Path(self.temp.name) / "edited.pdf")
+        with fitz.open() as doc:
+            page = doc.new_page()
+            page.insert_text((72, 100), "Invoice 1234", fontsize=12)
+            page.insert_text((72, 140), "Total 500", fontsize=12)
+            doc.save(self.source)
+
+    def test_inspect_returns_selectable_spans(self):
+        spans = inspect_text(self.source, 0)
+        self.assertIn("Invoice 1234", [span["text"] for span in spans])
+
+    def test_replace_shorter_text_and_preserve_other_lines(self):
+        result = replace_text(self.source, self.output, [
+            TextReplacement(0, "Invoice 1234", "Invoice 12")
+        ])
+        self.assertEqual(result["replacements"], 1)
+        with fitz.open(self.output) as doc:
+            text = doc[0].get_text()
+            self.assertIn("Invoice 12", text)
+            self.assertNotIn("Invoice 1234", text)
+            self.assertIn("Total 500", text)
+
+    def test_two_distinct_spans_can_be_edited_together(self):
+        result = replace_text(self.source, self.output, [
+            TextReplacement(0, "Invoice 1234", "Invoice 12"),
+            TextReplacement(0, "Total 500", "Total 50"),
+        ])
+        self.assertEqual(result["replacements"], 2)
+        with fitz.open(self.output) as doc:
+            text = doc[0].get_text()
+            self.assertIn("Invoice 12", text)
+            self.assertIn("Total 50", text)
+            self.assertNotIn("Invoice 1234", text)
+
+    def test_duplicate_text_occurrence_selects_second_span(self):
+        with fitz.open(self.source) as doc:
+            doc[0].insert_text((72, 180), "Total 500", fontsize=12)
+            doc.save(self.source + ".tmp")
+        Path(self.source + ".tmp").replace(self.source)
+        replace_text(self.source, self.output, [
+            TextReplacement(0, "Total 500", "Total 50", occurrence=1)
+        ])
+        with fitz.open(self.output) as doc:
+            text = doc[0].get_text()
+            lines = text.splitlines()
+            self.assertEqual(lines.count("Total 500"), 1)
+            self.assertEqual(lines.count("Total 50"), 1)
+
+    def test_replacement_matches_correct_duplicate_location(self):
+        with fitz.open(self.source) as doc:
+            doc[0].insert_text((72, 180), "Total 500", fontsize=12)
+            doc.save(self.source + ".tmp")
+        Path(self.source + ".tmp").replace(self.source)
+        replace_text(self.source, self.output, [
+            TextReplacement(0, "Total 500", "Total 50", occurrence=1)
+        ])
+        with fitz.open(self.output) as doc:
+            first = doc[0].get_textbox(fitz.Rect(65, 125, 180, 150))
+            second = doc[0].get_textbox(fitz.Rect(65, 165, 180, 190))
+            self.assertIn("Total 500", first)
+            self.assertIn("Total 50", second)
+
+    def test_source_pdf_is_not_modified(self):
+        original = Path(self.source).read_bytes()
+        replace_text(self.source, self.output, [
+            TextReplacement(0, "Invoice 1234", "Invoice 12")
+        ])
+        self.assertEqual(Path(self.source).read_bytes(), original)
+
+    def test_unrelated_page_remains_intact(self):
+        with fitz.open(self.source) as doc:
+            second = doc.new_page()
+            second.insert_text((72, 100), "Do not change", fontsize=12)
+            doc.save(self.source + ".tmp")
+        Path(self.source + ".tmp").replace(self.source)
+        replace_text(self.source, self.output, [
+            TextReplacement(0, "Invoice 1234", "Invoice 12")
+        ])
+        with fitz.open(self.output) as doc:
+            self.assertEqual(len(doc), 2)
+            self.assertIn("Do not change", doc[1].get_text())
+
+    def test_reject_out_of_range_page_without_writing_output(self):
+        with self.assertRaisesRegex(PdfEditError, "Page out of range"):
+            replace_text(self.source, self.output, [
+                TextReplacement(99, "Invoice 1234", "Invoice 12")
+            ])
+        self.assertFalse(Path(self.output).exists())
+
+    def test_reject_missing_span_without_writing_output(self):
+        with self.assertRaises(PdfEditError):
+            replace_text(self.source, self.output, [
+                TextReplacement(0, "not there", "replacement")
+            ])
+        self.assertFalse(Path(self.output).exists())
+
+    def test_reject_text_overflow(self):
+        with self.assertRaises(PdfEditError):
+            replace_text(self.source, self.output, [
+                TextReplacement(0, "Invoice 1234", "Invoice number one two three four five six seven")
+            ])
+        self.assertFalse(Path(self.output).exists())
+
+    def test_reject_overlapping_edits(self):
+        with self.assertRaises(PdfEditError):
+            replace_text(self.source, self.output, [
+                TextReplacement(0, "Invoice 1234", "Invoice 12"),
+                TextReplacement(0, "Invoice 1234", "Invoice 13"),
+            ])
+        self.assertFalse(Path(self.output).exists())
+
+    def test_unicode_is_embedded_without_a_client_font_path(self):
+        replace_text(self.source, self.output, [
+            TextReplacement(0, "Invoice 1234", "Příjem 12")
+        ])
+        with fitz.open(self.output) as doc:
+            self.assertIn("Příjem 12", doc[0].get_text())
+            self.assertNotIn("Invoice 1234", doc[0].get_text())
+
+    def test_unicode_with_optional_font(self):
+        candidates = [
+            Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
+            Path("/usr/share/fonts/truetype/liberation2/LiberationSans-Regular.ttf"),
+        ]
+        font = next((p for p in candidates if p.is_file()), None)
+        if font is None:
+            self.skipTest("No Unicode TTF installed in test environment")
+        replace_text(self.source, self.output, [
+            TextReplacement(0, "Invoice 1234", "Příjem 12", font_file=str(font))
+        ])
+        with fitz.open(self.output) as doc:
+            self.assertIn("Příjem 12", doc[0].get_text())
+
+    def test_reject_neighbouring_text_overlap(self):
+        with fitz.open(self.source) as doc:
+            doc[0].insert_text((73, 100), "OVERLAP", fontsize=12)
+            doc.save(self.source + ".tmp")
+        Path(self.source + ".tmp").replace(self.source)
+        with self.assertRaisesRegex(PdfEditError, "neighbouring text"):
+            replace_text(self.source, self.output, [
+                TextReplacement(0, "Invoice 1234", "Invoice 12")
+            ])
+        self.assertFalse(Path(self.output).exists())
+
+    def test_multiline_edit_preserves_neighbour_and_first_baseline(self):
+        replace_text(self.source, self.output, [
+            TextReplacement(0, "Invoice 1234", "Line\nnext")
+        ])
+        with fitz.open(self.output) as doc:
+            self.assertIn("Line\nnext", doc[0].get_text())
+            self.assertIn("Total 500", doc[0].get_text())
+            spans = [s for b in doc[0].get_text("dict")["blocks"]
+                     for line in b.get("lines", []) for s in line["spans"]]
+            first = next(s for s in spans if s["text"] == "Line")
+            self.assertAlmostEqual(first["origin"][1], 100, places=2)
+            self.assertAlmostEqual(first["size"], 12, places=2)
+
+    def test_replaced_text_is_not_extractable(self):
+        replace_text(self.source, self.output, [
+            TextReplacement(0, "Invoice 1234", "Invoice 12")
+        ])
+        with fitz.open(self.output) as doc:
+            self.assertEqual(doc[0].search_for("Invoice 1234"), [])
+            self.assertTrue(doc[0].search_for("Invoice 12"))
+
+    def test_reject_boolean_page_number(self):
+        with self.assertRaisesRegex(PdfEditError, "must be integers"):
+            replace_text(self.source, self.output, [
+                TextReplacement(True, "Invoice 1234", "Invoice 12")
+            ])
+        self.assertFalse(Path(self.output).exists())
+
+    def test_reject_non_string_replacement(self):
+        with self.assertRaisesRegex(PdfEditError, "must be strings"):
+            replace_text(self.source, self.output, [
+                TextReplacement(0, "Invoice 1234", 123)
+            ])
+        self.assertFalse(Path(self.output).exists())
+
+    def test_reject_negative_occurrence(self):
+        with self.assertRaisesRegex(PdfEditError, "not found"):
+            replace_text(self.source, self.output, [
+                TextReplacement(0, "Invoice 1234", "Invoice 12", occurrence=-1)
+            ])
+        self.assertFalse(Path(self.output).exists())
+
+    def test_reject_control_characters_without_output(self):
+        with self.assertRaisesRegex(PdfEditError, "Control characters"):
+            replace_text(self.source, self.output, [
+                TextReplacement(0, "Invoice 1234", "Invoice\t12")
+            ])
+        self.assertFalse(Path(self.output).exists())
+
+    def test_replacement_is_searchable_after_save(self):
+        replace_text(self.source, self.output, [
+            TextReplacement(0, "Invoice 1234", "Invoice 12")
+        ])
+        with fitz.open(self.output) as doc:
+            self.assertTrue(doc[0].search_for("Invoice 12"))
+            self.assertFalse(doc[0].search_for("Invoice 1234"))
+
+    def test_wrap_long_word_without_losing_characters(self):
+        with fitz.open(self.source) as doc:
+            doc[0].insert_text((72, 200), "iii", fontname="cour", fontsize=12)
+            doc.save(self.source + ".tmp")
+        Path(self.source + ".tmp").replace(self.source)
+        replace_text(self.source, self.output, [
+            TextReplacement(0, "iii", "iiiiiiiiiiiiiiiiiiii")
+        ])
+        with fitz.open(self.output) as doc:
+            text = doc[0].get_textbox(fitz.Rect(70, 185, 96, 350))
+            self.assertEqual("".join(text.split()), "iiiiiiiiiiiiiiiiiiii")
+            self.assertGreater(len(text.splitlines()), 1)
+
+    def test_longer_sentence_wraps_in_the_original_width(self):
+        result = replace_text(self.source, self.output, [
+            TextReplacement(0, "Invoice 1234", "Invoice number 12")
+        ])
+        with fitz.open(self.output) as doc:
+            text = doc[0].get_textbox(fitz.Rect(result["edit_boxes"][0]["bbox"]) + (-1, -1, 1, 1))
+            self.assertEqual("".join(text.split()), "Invoicenumber12")
+            self.assertGreater(len(text.splitlines()), 1)
+            self.assertIn("Total 500", doc[0].get_text())
+
+    def test_adjacent_paragraph_lines_are_one_editable_block(self):
+        with fitz.open(self.source) as doc:
+            doc[0].insert_text((72, 220), "One long line\nAnother line", fontsize=12)
+            doc.save(self.source + ".tmp")
+        Path(self.source + ".tmp").replace(self.source)
+        self.assertIn("One long line\nAnother line", [b["text"] for b in inspect_text(self.source, 0)])
+        replace_text(self.source, self.output, [
+            TextReplacement(0, "One long line\nAnother line", "New paragraph\nNext line")
+        ])
+        with fitz.open(self.output) as doc:
+            self.assertNotIn("One long line", doc[0].get_text())
+            text = doc[0].get_textbox(fitz.Rect(70, 200, 150, 290))
+            self.assertEqual("".join(text.split()), "NewparagraphNextline")
+
+    def test_original_coloured_background_is_preserved(self):
+        with fitz.open(self.source) as doc:
+            doc[0].draw_rect(fitz.Rect(65, 80, 180, 110), fill=(0.2, 0.7, 0.4), color=None, overlay=False)
+            doc.save(self.source + ".tmp")
+        Path(self.source + ".tmp").replace(self.source)
+        with fitz.open(self.source) as doc:
+            before = doc[0].get_pixmap().pixel(80, 88)
+        replace_text(self.source, self.output, [TextReplacement(0, "Invoice 1234", "Invoice 12")])
+        with fitz.open(self.output) as doc:
+            self.assertEqual(doc[0].get_pixmap().pixel(80, 88), before)
+            self.assertNotEqual(before, (255, 255, 255))
+
+    def test_paragraph_from_separate_pdf_text_objects_is_editable_together(self):
+        with fitz.open(self.source) as doc:
+            for index, text in enumerate(("First paragraph line", "Second line", "Third line")):
+                doc[0].insert_text((72, 240 + index * 22), text, fontsize=14)
+            doc.save(self.source + ".tmp")
+        Path(self.source + ".tmp").replace(self.source)
+        paragraph = "First paragraph line\nSecond line\nThird line"
+        self.assertIn(paragraph, [b["text"] for b in inspect_text(self.source, 0)])
+        replace_text(self.source, self.output, [TextReplacement(0, paragraph, "One new paragraph")])
+        with fitz.open(self.output) as doc:
+            self.assertIn("Onenewparagraph", "".join(doc[0].get_text().split()))
+            self.assertNotIn("Third line", doc[0].get_text())
+
+    def test_empty_replacement_deletes_text_and_preserves_neighbour(self):
+        replace_text(self.source, self.output, [TextReplacement(0, "Invoice 1234", "")])
+        with fitz.open(self.output) as doc:
+            self.assertNotIn("Invoice 1234", doc[0].get_text())
+            self.assertIn("Total 500", doc[0].get_text())
+
+    def test_font_missing_glyphs_uses_disclosed_unicode_fallback(self):
+        result = replace_text(self.source, self.output, [TextReplacement(0, "Invoice 1234", "漢字")])
+        self.assertTrue(result["font_substitutions"])
+        with fitz.open(self.output) as doc:
+            self.assertIn("漢字", doc[0].get_text())
+
+    def test_existing_redactions_are_not_applied_as_a_side_effect(self):
+        with fitz.open(self.source) as doc:
+            doc[0].add_redact_annot(fitz.Rect(65, 125, 180, 150))
+            doc.save(self.source + ".tmp")
+        Path(self.source + ".tmp").replace(self.source)
+        with self.assertRaisesRegex(PdfEditError, "existing redaction"):
+            replace_text(self.source, self.output, [TextReplacement(0, "Invoice 1234", "Invoice 12")])
+        self.assertFalse(Path(self.output).exists())
+
+    def test_embedded_bold_italic_font_and_colour_are_retained(self):
+        candidates = [Path("/usr/share/fonts/truetype/dejavu/DejaVuSans-BoldOblique.ttf")]
+        if os.getenv("CODEX_PRIMARY_RUNTIME_ROOT"):
+            candidates.append(Path(os.environ["CODEX_PRIMARY_RUNTIME_ROOT"]) /
+                              "dependencies/native/libreoffice-headless/libreoffice/share/fonts/truetype/DejaVuSans-BoldOblique.ttf")
+        font = next((p for p in candidates if p.is_file()), None)
+        if font is None:
+            self.skipTest("No embedded font fixture available")
+        with fitz.open() as doc:
+            page = doc.new_page()
+            page.insert_font(fontname="fixture", fontfile=str(font))
+            page.insert_text((72, 100), "Original heading", fontname="fixture", fontsize=16, color=(0, 0.4, 0.2))
+            doc.save(self.source)
+        result = replace_text(self.source, self.output, [TextReplacement(0, "Original heading", "Příjem 12")])
+        self.assertEqual(result["font_substitutions"], [])
+        with fitz.open(self.output) as doc:
+            span = doc[0].get_text("dict")["blocks"][0]["lines"][0]["spans"][0]
+            self.assertEqual(span["text"], "Příjem 12")
+            self.assertEqual(span["font"], "DejaVuSans-BoldOblique")
+            self.assertEqual(span["flags"] & 18, 18)
+            self.assertEqual(span["color"], 0x006633)
+            self.assertAlmostEqual(span["size"], 16)
+
+    def test_reject_rotated_page_without_output(self):
+        with fitz.open(self.source) as doc:
+            doc[0].set_rotation(90)
+            doc.save(self.source + ".tmp")
+        Path(self.source + ".tmp").replace(self.source)
+        with self.assertRaisesRegex(PdfEditError, "rotated PDF pages"):
+            replace_text(self.source, self.output, [
+                TextReplacement(0, "Invoice 1234", "Invoice 12")
+            ])
+        self.assertFalse(Path(self.output).exists())
+
+    def test_success_does_not_leave_temporary_files(self):
+        replace_text(self.source, self.output, [
+            TextReplacement(0, "Invoice 1234", "Invoice 12")
+        ])
+        self.assertTrue(Path(self.output).is_file())
+        self.assertEqual(
+            list(Path(self.temp.name).glob(".pdfaspect-edit-*.pdf")), []
+        )
+
+    def test_failed_edit_preserves_existing_output(self):
+        Path(self.output).write_bytes(b"existing result")
+        with self.assertRaises(PdfEditError):
+            replace_text(self.source, self.output, [
+                TextReplacement(0, "Invoice 1234", "A much longer replacement that will not fit")
+            ])
+        self.assertEqual(Path(self.output).read_bytes(), b"existing result")
+
+    def test_failed_edit_preserves_existing_output(self):
+        original_output = b"previous successful output"
+        Path(self.output).write_bytes(original_output)
+        with self.assertRaises(PdfEditError):
+            replace_text(self.source, self.output, [
+                TextReplacement(0, "Invoice 1234", "This text is far too long for the original box")
+            ])
+        self.assertEqual(Path(self.output).read_bytes(), original_output)
+
+    def test_replacement_of_same_text_does_not_corrupt_pdf(self):
+        replace_text(self.source, self.output, [
+            TextReplacement(0, "Invoice 1234", "Invoice 1234")
+        ])
+        with fitz.open(self.output) as doc:
+            self.assertIn("Invoice 1234", doc[0].get_text())
+            self.assertIn("Total 500", doc[0].get_text())
+
+    def test_reject_rotated_page_without_writing_output(self):
+        with fitz.open(self.source) as doc:
+            doc[0].set_rotation(90)
+            doc.save(self.source + ".tmp")
+        Path(self.source + ".tmp").replace(self.source)
+        with self.assertRaisesRegex(PdfEditError, "rotated"):
+            replace_text(self.source, self.output, [
+                TextReplacement(0, "Invoice 1234", "Invoice 12")
+            ])
+        self.assertFalse(Path(self.output).exists())
+
+    def test_reject_overwriting_original(self):
+        with self.assertRaises(PdfEditError):
+            replace_text(self.source, self.source, [
+                TextReplacement(0, "Invoice 1234", "Invoice 12")
+            ])
+
+    def test_short_word_can_grow_horizontally_without_wrapping(self):
+        with fitz.open() as doc:
+            page = doc.new_page()
+            page.insert_text((72, 100), "Hi", fontsize=12)
+            page.insert_text((72, 140), "Leave this line", fontsize=12)
+            doc.save(self.source)
+        replace_text(self.source, self.output, [
+            TextReplacement(0, "Hi", "A whole sentence stays on this line", width=400)
+        ])
+        with fitz.open(self.output) as doc:
+            span = next(s for b in doc[0].get_text("dict")["blocks"]
+                        for line in b.get("lines", []) for s in line["spans"]
+                        if s["text"].startswith("A whole"))
+            self.assertEqual(span["text"], "A whole sentence stays on this line")
+            self.assertAlmostEqual(span["origin"][1], 100)
+            self.assertIn("Leave this line", doc[0].get_text())
+
+    def test_bold_only_change_is_saved_and_searchable(self):
+        replace_text(self.source, self.output, [
+            TextReplacement(0, "Invoice 1234", "Invoice 1234", bold=True, width=400)
+        ])
+        with fitz.open(self.output) as doc:
+            span = next(s for b in doc[0].get_text("dict")["blocks"]
+                        for line in b.get("lines", []) for s in line["spans"] if s["text"] == "Invoice 1234")
+            self.assertTrue(span["flags"] & 16)
+            self.assertTrue(doc[0].search_for("Invoice 1234"))
+            self.assertIn("Total 500", doc[0].get_text())
+
+    def test_bold_can_be_removed_without_losing_italic(self):
+        with fitz.open() as doc:
+            page = doc.new_page()
+            page.insert_text((72, 100), "Bold italic", fontname="hebi", fontsize=12, color=(0, 0.4, 0.2))
+            doc.save(self.source)
+        replace_text(self.source, self.output, [
+            TextReplacement(0, "Bold italic", "Regular italic", bold=False, width=400)
+        ])
+        with fitz.open(self.output) as doc:
+            span = doc[0].get_text("dict")["blocks"][0]["lines"][0]["spans"][0]
+            self.assertFalse(span["flags"] & 16)
+            self.assertTrue(span["flags"] & 2)
+            self.assertEqual(span["color"], 0x006633)
+
+    def test_bold_czech_text_and_horizontal_width_are_preserved(self):
+        replace_text(self.source, self.output, [
+            TextReplacement(0, "Invoice 1234", "Příliš žluťoučký kůň běží dál", bold=True, width=400)
+        ])
+        with fitz.open(self.output) as doc:
+            span = next(s for b in doc[0].get_text("dict")["blocks"]
+                        for line in b.get("lines", []) for s in line["spans"] if s["text"].startswith("Příliš"))
+            self.assertEqual(span["text"], "Příliš žluťoučký kůň běží dál")
+            self.assertTrue(span["flags"] & 16)
+
+    def test_horizontal_growth_cannot_cross_an_adjacent_text_column(self):
+        with fitz.open() as doc:
+            page = doc.new_page()
+            page.insert_text((72, 100), "Hi", fontsize=12)
+            page.insert_text((160, 100), "Other column", fontsize=12)
+            blocks = inspect_page(page)
+            left = next(b for b in blocks if b["text"] == "Hi")
+            box = editing_bbox(page, left, blocks)
+            self.assertLessEqual(box[2], 158)
+            doc.save(self.source)
+        with self.assertRaisesRegex(PdfEditError, "available space"):
+            replace_text(self.source, self.output, [TextReplacement(0, "Hi", "Longer text", width=200)])
+        replace_text(self.source, self.output, [
+            TextReplacement(0, "Hi", "Longer text in the left column", width=box[2] - box[0])
+        ])
+        with fitz.open(self.output) as doc:
+            self.assertIn("Other column", doc[0].get_text())
+            self.assertIn("Longertextintheleftcolumn", "".join(doc[0].get_text().split()))
+
+    def test_horizontal_growth_stops_at_a_table_cell_edge(self):
+        with fitz.open() as doc:
+            page = doc.new_page()
+            page.draw_rect(fitz.Rect(65, 80, 150, 120))
+            page.insert_text((72, 100), "Hi", fontsize=12)
+            blocks = inspect_page(page)
+            self.assertAlmostEqual(editing_bbox(page, blocks[0], blocks)[2], 148)
+            doc.save(self.source)
+        with self.assertRaisesRegex(PdfEditError, "available space"):
+            replace_text(self.source, self.output, [TextReplacement(0, "Hi", "Longer text", width=200)])
+
+    def test_width_wraps_only_when_the_requested_line_is_full(self):
+        result = replace_text(self.source, self.output, [
+            TextReplacement(0, "Invoice 1234", "A longer horizontal sentence that wraps", width=160)
+        ])
+        with fitz.open(self.output) as doc:
+            text = doc[0].get_textbox(fitz.Rect(result["edit_boxes"][0]["bbox"]) + (-1, -1, 1, 1))
+            self.assertEqual(text.splitlines()[0], "A longer horizontal sentence")
+            self.assertEqual("".join(text.split()), "Alongerhorizontalsentencethatwraps")
+
+    def test_reject_invalid_bold_and_width_values(self):
+        for options in ({"bold": "true"}, {"width": True}, {"width": float("nan")},
+                        {"width": float("inf")}, {"width": -10}, {"width": 0}):
+            with self.subTest(options=options), self.assertRaises(PdfEditError):
+                replace_text(self.source, self.output, [TextReplacement(0, "Invoice 1234", "Invoice 12", **options)])
+            self.assertFalse(Path(self.output).exists())
+
+    def test_every_available_font_and_style_exports_czech_text(self):
+        fonts = editing_fonts()
+        self.assertTrue(fonts, "No editor fonts are installed")
+        for family in fonts:
+            for bold, italic in ((False, False), (True, False), (False, True), (True, True)):
+                with self.subTest(family=family["id"], bold=bold, italic=italic):
+                    result = replace_text(self.source, self.output, [TextReplacement(
+                        0, "Invoice 1234", "Příliš žluťoučký kůň", width=400, font_family=family["id"],
+                        bold=bold, italic=italic, font_size=14, color=0x2456A8)])
+                    self.assertEqual(result["font_substitutions"], [])
+                    with fitz.open(self.output) as doc:
+                        span = next(s for b in doc[0].get_text("dict")["blocks"]
+                                    for line in b.get("lines", []) for s in line["spans"] if s["text"].startswith("Příliš"))
+                        self.assertEqual(span["text"].replace("\u00a0", " "), "Příliš žluťoučký kůň")
+                        self.assertEqual(bool(span["flags"] & 16), bold)
+                        self.assertEqual(bool(span["flags"] & 2), italic)
+                        self.assertEqual(span["color"], 0x2456A8)
+                        self.assertAlmostEqual(span["size"], 14)
+                        self.assertAlmostEqual(span["origin"][1], 100)
+                        self.assertIn("Total 500", doc[0].get_text())
+
+    def test_italic_only_change_preserves_original_font_family(self):
+        replace_text(self.source, self.output, [
+            TextReplacement(0, "Invoice 1234", "Invoice 1234", italic=True, width=400)
+        ])
+        with fitz.open(self.output) as doc:
+            span = next(s for b in doc[0].get_text("dict")["blocks"]
+                        for line in b.get("lines", []) for s in line["spans"] if s["text"] == "Invoice 1234")
+            # MuPDF embeds its Nimbus Sans equivalent for the Base14 Helvetica variant.
+            self.assertIn(span["font"], {"Helvetica-Oblique", "NimbusSans-Italic"})
+            self.assertTrue(span["flags"] & 2)
+            self.assertFalse(span["flags"] & 16)
+
+    def test_font_size_and_color_only_change_are_saved(self):
+        replace_text(self.source, self.output, [
+            TextReplacement(0, "Invoice 1234", "Invoice 1234", font_size=20, color=0xCC3344, width=400)
+        ])
+        with fitz.open(self.output) as doc:
+            span = next(s for b in doc[0].get_text("dict")["blocks"]
+                        for line in b.get("lines", []) for s in line["spans"] if s["text"] == "Invoice 1234")
+            self.assertAlmostEqual(span["size"], 20)
+            self.assertEqual(span["color"], 0xCC3344)
+            self.assertAlmostEqual(span["origin"][1], 100)
+
+    def test_selected_font_is_not_silently_replaced_for_missing_glyphs(self):
+        with self.assertRaisesRegex(PdfEditError, "selected font"):
+            replace_text(self.source, self.output, [TextReplacement(
+                0, "Invoice 1234", "漢字", font_family="dejavu-sans", width=400)])
+        self.assertFalse(Path(self.output).exists())
+
+    def test_reject_invalid_font_options_without_writing_output(self):
+        for options in ({"italic": "true"}, {"font_family": "../../etc/passwd"}, {"font_family": True},
+                        {"font_size": True}, {"font_size": float("nan")}, {"font_size": 0},
+                        {"font_size": 145}, {"color": "#ffffff"}, {"color": True}, {"color": 0x1000000}):
+            with self.subTest(options=options), self.assertRaises(PdfEditError):
+                replace_text(self.source, self.output, [TextReplacement(0, "Invoice 1234", "Invoice 12", **options)])
+            self.assertFalse(Path(self.output).exists())
+
+    def test_copied_embedded_font_survives_source_deletion_and_cross_page_paste(self):
+        with fitz.open() as doc:
+            page = doc.new_page()
+            page.insert_text((72, 100), "Original serif", fontsize=18, fontname="sourcefont",
+                             fontfile=str(editing_font_path("dejavu-serif", True, True)), color=(0.2, 0.3, 0.4))
+            second = doc.new_page()
+            second.insert_text((72, 200), "Target", fontsize=10)
+            doc.save(self.source)
+        result = replace_text(self.source, self.output, [
+            TextReplacement(0, "Original serif", ""),
+            TextReplacement(1, "Target", "Příliš žluťoučký kůň", width=400, font_size=18,
+                            bold=True, italic=True, color=0x334C66,
+                            font_source={"page": 0, "old_text": "Original serif", "occurrence": 0})
+        ])
+        self.assertEqual(result["font_substitutions"], [])
+        with fitz.open(self.output) as doc:
+            self.assertNotIn("Original serif", doc[0].get_text())
+            span = next(s for b in doc[1].get_text("dict")["blocks"]
+                        for line in b.get("lines", []) for s in line["spans"])
+            self.assertEqual(span["font"], "DejaVuSerif-BoldItalic")
+            self.assertEqual(span["text"], "Příliš žluťoučký kůň")
+            self.assertAlmostEqual(span["size"], 18)
+            self.assertEqual(span["color"], 0x334C66)
+            self.assertAlmostEqual(span["origin"][1], 200)
+
+    def test_copied_base14_font_preserves_source_family_in_another_block(self):
+        with fitz.open() as doc:
+            page = doc.new_page()
+            page.insert_text((72, 100), "Serif source", fontsize=16, fontname="tiit")
+            page.insert_text((72, 180), "Target", fontsize=12)
+            doc.save(self.source)
+        replace_text(self.source, self.output, [TextReplacement(
+            0, "Target", "Copied title", width=400, italic=True, font_size=16,
+            font_source={"page": 0, "old_text": "Serif source", "occurrence": 0})])
+        with fitz.open(self.output) as doc:
+            span = next(s for b in doc[0].get_text("dict")["blocks"]
+                        for line in b.get("lines", []) for s in line["spans"] if s["text"] == "Copied title")
+            self.assertIn(span["font"], {"Times-Italic", "NimbusRoman-Italic"})
+            self.assertTrue(span["flags"] & 2)
+            self.assertAlmostEqual(span["origin"][1], 180)
+
+    def test_reject_invalid_copied_font_references_without_writing_output(self):
+        for source in ("/etc/passwd", {}, {"page": 0, "old_text": "Invoice 1234", "occurrence": 0, "font_file": "/etc/passwd"},
+                       {"page": True, "old_text": "Invoice 1234", "occurrence": 0},
+                       {"page": -1, "old_text": "Invoice 1234", "occurrence": 0},
+                       {"page": 99, "old_text": "Invoice 1234", "occurrence": 0},
+                       {"page": 0, "old_text": "Missing", "occurrence": 0},
+                       {"page": 0, "old_text": "Invoice 1234", "occurrence": 99}):
+            with self.subTest(source=source), self.assertRaises(PdfEditError):
+                replace_text(self.source, self.output, [TextReplacement(0, "Total 500", "Copied", width=400, font_source=source)])
+            self.assertFalse(Path(self.output).exists())
+
+    def test_reject_ambiguous_font_family_and_copied_font_source(self):
+        with self.assertRaisesRegex(PdfEditError, "either"):
+            replace_text(self.source, self.output, [TextReplacement(
+                0, "Total 500", "Copied", width=400, font_family="dejavu-serif",
+                font_source={"page": 0, "old_text": "Invoice 1234", "occurrence": 0})])
+        self.assertFalse(Path(self.output).exists())
+
+
+if __name__ == "__main__":
+    unittest.main()
