@@ -447,7 +447,7 @@ def replace_text(pdf_path: str, output_path: str, changes: list[TextReplacement]
             for member in op["block"]["members"]:
                 doc[op["page"]].add_redact_annot(member["bbox"], fill=False, cross_out=False)
         for number in {op["page"] for op in operations}:
-            doc[number].apply_redactions(images=2, graphics=0, text=0)
+            doc[number].apply_redactions(images=0, graphics=0, text=0)
         for op in operations:
             if not op["lines"]:
                 continue
