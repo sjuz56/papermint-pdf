@@ -133,7 +133,33 @@ def main():
 
                     short_target = page.locator(".span").nth(2)
                     original_source = page.locator(".span").nth(4)
+                    # Copying from a PDF viewer may contain no HTML or private metadata.
+                    short_target.click()
+                    page.locator("#replacement").press("Control+a")
+                    page.locator("#replacement").evaluate("""el => {
+                        const data = new DataTransfer(); data.setData('text/plain', 'Původní písmo');
+                        el.dispatchEvent(new ClipboardEvent('paste', {clipboardData:data, bubbles:true, cancelable:true}));
+                    }""")
+                    expect(page.locator("#font-family")).to_have_value("copied-original")
+                    page.locator("#apply").click()
+                    page.get_by_text("Preview shows the saved PDF.", exact=False).wait_for()
+                    download_text("Původní písmo", bold=True, italic=True, font="DejaVuSerif-BoldItalic", size=17, color=0x334C66, baseline=240)
+                    page.locator("#undo").click()
+                    page.get_by_text("Previous PDF restored.", exact=False).wait_for()
                     original_source.click()
+                    expect(page.locator("#apply")).to_be_enabled()
+                    metrics = page.locator("#replacement").evaluate("""el => {
+                        const style=getComputedStyle(el),canvas=document.createElement('canvas'),context=canvas.getContext('2d');
+                        context.font=style.fontStyle+' '+style.fontWeight+' '+style.fontSize+' '+style.fontFamily;
+                        context.fontKerning=style.fontKerning;
+                        return {family:style.fontFamily,width:context.measureText(el.value).width,
+                            scale:parseFloat(style.fontSize)/17,loaded:document.fonts.check(context.font,el.value)};
+                    }""")
+                    assert "PDFaspect-document-" in metrics["family"], "Original font is replaced while typing"
+                    assert metrics["loaded"], "Original PDF font was not loaded by the browser"
+                    expected_width = fitz.Font(fontfile=str(editing_font_path("dejavu-serif", True, True))).text_length("Původní písmo", fontsize=17) * metrics["scale"]
+                    # Browser hinting rounds advances differently from PDF font tables.
+                    assert abs(metrics["width"] - expected_width) < 1, f"Typing uses different font metrics from the PDF: {metrics}, expected {expected_width}"
                     page.locator("#replacement").press("Control+a")
                     page.locator("#replacement").press("Control+c")
                     clipboard = page.evaluate("""async () => {
@@ -185,6 +211,55 @@ def main():
                     }""")
                     expect(page.locator("#replacement")).to_have_value("Původní písmo")
                     expect(page.locator("#font-family")).to_have_value("copied-original")
+                    page.locator("#cancel").click()
+
+                    # Mobile apps can keep HTML but remove the editor's private attributes.
+                    short_target.click()
+                    page.locator("#replacement").press("Control+a")
+                    page.locator("#replacement").evaluate("""el => {
+                        const data = new DataTransfer(); data.setData('text/plain', 'Původní písmo');
+                        data.setData('text/html', '<span>Původní písmo</span>');
+                        el.dispatchEvent(new ClipboardEvent('paste', {clipboardData:data, bubbles:true, cancelable:true}));
+                    }""")
+                    expect(page.locator("#font-family")).to_have_value("copied-original")
+                    page.locator("#cancel").click()
+
+                    # Standard HTML from Word/web carries styles without our private markers.
+                    for html, expected_family, expected_font in (
+                        ('<span style="font-family:DejaVu Serif;font-size:17pt;font-weight:bold;font-style:italic;color:#334c66">Písmo z Wordu</span>',
+                         "copied-original", "DejaVuSerif-BoldItalic"),
+                        ('<style>.MsoNormal{font-family:Liberation Mono;color:rgb(51,76,102)}</style><p class="MsoNormal"><b><i><span style="font-size:22.6666666667px">Písmo z Wordu</span></i></b></p>',
+                         "liberation-mono", "LiberationMono-BoldItalic"),
+                    ):
+                        short_target.click()
+                        page.locator("#replacement").press("Control+a")
+                        page.locator("#replacement").evaluate("""(el, html) => {
+                            const data=new DataTransfer();data.setData('text/plain','Písmo z Wordu');data.setData('text/html',html);
+                            el.dispatchEvent(new ClipboardEvent('paste',{clipboardData:data,bubbles:true,cancelable:true}));
+                        }""", html)
+                        expect(page.locator("#font-family")).to_have_value(expected_family)
+                        expect(page.locator("#bold")).to_have_attribute("aria-pressed", "true")
+                        expect(page.locator("#italic")).to_have_attribute("aria-pressed", "true")
+                        expect(page.locator("#font-color")).to_have_value("#334c66")
+                        expect(page.locator("#apply")).to_be_enabled()
+                        page.locator("#apply").click()
+                        page.get_by_text("Preview shows the saved PDF.", exact=False).wait_for()
+                        download_text("Písmo z Wordu", bold=True, italic=True, font=expected_font, size=17, color=0x334C66, baseline=240)
+                        page.locator("#undo").click()
+                        page.get_by_text("Previous PDF restored.", exact=False).wait_for()
+
+                    # Imported clipboard HTML stays inert and unavailable fonts are disclosed.
+                    short_target.click()
+                    page.locator("#replacement").press("Control+a")
+                    page.locator("#replacement").evaluate("""el => {
+                        window.clipboardExecuted=false;
+                        const data=new DataTransfer();data.setData('text/plain','Unknown font');
+                        data.setData('text/html','<span style="font-family:MissingFont">Unknown font</span><img src="/missing-clipboard-image" onerror="window.clipboardExecuted=true">');
+                        el.dispatchEvent(new ClipboardEvent('paste',{clipboardData:data,bubbles:true,cancelable:true}));
+                    }""")
+                    expect(page.locator("#status")).to_contain_text("unavailable in this PDF")
+                    assert not page.evaluate("window.clipboardExecuted")
+                    assert page.locator('img[src="/missing-clipboard-image"]').count() == 0
                     page.locator("#cancel").click()
 
                     # The same rich clipboard can intentionally be pasted as plain text.
@@ -344,7 +419,8 @@ def main():
                     assert abs(width - 200) <= 2, width
                     assert page.locator("#replacement").evaluate("""el => {
                         const style = getComputedStyle(el), ctx = document.createElement('canvas').getContext('2d');
-                        ctx.font = style.font;
+                        ctx.font = style.fontStyle+' '+style.fontWeight+' '+style.fontSize+' '+style.fontFamily;
+                        ctx.fontKerning = style.fontKerning;
                         return ctx.measureText(el.value).width > el.clientWidth;
                     }"""), "Resized text field is still too wide to test wrapping"
                     page.locator("#apply").click()

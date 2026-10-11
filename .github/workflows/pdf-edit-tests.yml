@@ -41,7 +41,7 @@ jobs:
           python - <<'PY'
           from pathlib import Path
           html = Path('static/edit-pdf-prototype.html').read_text(encoding='utf-8')
-          assert 'src="/static/edit-pdf-prototype.js"' in html
+          assert 'src="/static/edit-pdf-prototype.js?' in html
           assert '<script type="module">' not in html
           PY
       - name: Install headless Chromium

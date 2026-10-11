@@ -1,7 +1,9 @@
 """Opt-in experimental PDF text edit endpoint. Disabled unless explicitly enabled."""
 import json
 import base64
+import hashlib
 import os
+import re
 import tempfile
 from pathlib import Path
 
@@ -20,12 +22,15 @@ MAX_PAGES = 20
 MAX_PAGE_PIXELS = 8_000_000
 MAX_TOTAL_PREVIEW_PIXELS = 24_000_000
 MAX_PREVIEW_SPANS = 3_000
+MAX_BROWSER_FONTS = 64
+MAX_BROWSER_FONT_BYTES = 2 * 1024 * 1024
+MAX_TOTAL_BROWSER_FONT_BYTES = 8 * 1024 * 1024
 
 
 
 
 
-def _inspect_document(source: Path) -> dict:
+def _inspect_document(source: Path, include_fonts: bool = True) -> dict:
     """Render PDF previews outside the async request event loop."""
     import fitz
     with fitz.open(source) as doc:
@@ -34,6 +39,9 @@ def _inspect_document(source: Path) -> dict:
         if len(doc) > MAX_PAGES:
             raise PdfEditError("Experimental editor supports up to 20 pages")
         pages = []
+        fonts = {}
+        font_xrefs = {}
+        font_bytes = 0
         total_pixels = 0
         for number in range(len(doc)):
             if doc[number].rotation != 0:
@@ -50,6 +58,37 @@ def _inspect_document(source: Path) -> dict:
             if len(blocks) > MAX_PREVIEW_SPANS:
                 raise PdfEditError("Too many text spans on a page")
             drawings = doc[number].get_drawings()
+            browser_fonts = {}
+            if include_fonts:
+                def font_key(name):
+                    return re.sub(r"[^a-z0-9]", "", re.sub(r"^[A-Z]{6}\+", "", name).lower())
+                used_names = {font_key(block["font"]) for block in blocks}
+                for xref, _, _, name, *_ in doc[number].get_fonts(full=True):
+                    key = font_key(name)
+                    if key not in used_names:
+                        continue
+                    if xref not in font_xrefs:
+                        font_xrefs[xref] = None
+                        try:
+                            _, extension, _, data = doc.extract_font(xref)
+                            if (extension not in {"ttf", "otf", "woff", "woff2"} or not data
+                                    or len(data) > MAX_BROWSER_FONT_BYTES):
+                                continue
+                            font_id = hashlib.sha256(data).hexdigest()[:24]
+                            if font_id not in fonts:
+                                if (len(fonts) >= MAX_BROWSER_FONTS
+                                        or font_bytes + len(data) > MAX_TOTAL_BROWSER_FONT_BYTES):
+                                    continue
+                                flags = fitz.Font(fontbuffer=data).flags
+                                fonts[font_id] = {"id": font_id, "name": name,
+                                    "bold": bool(flags["bold"]), "italic": bool(flags["italic"]),
+                                    "data": base64.b64encode(data).decode("ascii")}
+                                font_bytes += len(data)
+                            font_xrefs[xref] = font_id
+                        except (RuntimeError, ValueError):
+                            continue
+                    if font_xrefs[xref]:
+                        browser_fonts[key] = font_xrefs[xref]
             for raw in blocks:
                 span = {
                     "text": raw["text"], "bbox": list(raw["bbox"]),
@@ -57,6 +96,9 @@ def _inspect_document(source: Path) -> dict:
                     "flags": raw.get("flags", 0),
                     "edit_bbox": editing_bbox(doc[number], raw, blocks, drawings),
                 }
+                browser_font = browser_fonts.get(font_key(raw["font"])) if include_fonts else None
+                if browser_font:
+                    span["browser_font"] = browser_font
                 value = span["text"]
                 occurrence = occurrences.get(value, 0)
                 occurrences[value] = occurrence + 1
@@ -74,10 +116,10 @@ def _inspect_document(source: Path) -> dict:
                 "height": pix.height / 1.4,
                 "spans": spans,
             })
-    return {"pages": pages}
+    return {"pages": pages, "fonts": list(fonts.values())}
 
 @router.post("/api/experimental/inspect-pdf")
-async def inspect_pdf_experimental(file: UploadFile = File(...)):
+async def inspect_pdf_experimental(file: UploadFile = File(...), include_fonts: bool = Form(True)):
     """Return server-authoritative selectable spans for the browser editor."""
     if os.getenv("PAPERMINT_ENABLE_EXPERIMENTAL_EDIT_PDF") != "1":
         raise HTTPException(status_code=404, detail="Not available")
@@ -96,7 +138,7 @@ async def inspect_pdf_experimental(file: UploadFile = File(...)):
             if stream.read(5) != b"%PDF-":
                 raise HTTPException(status_code=400, detail="Invalid PDF header")
         try:
-            result = await run_in_threadpool(_inspect_document, source)
+            result = await run_in_threadpool(_inspect_document, source, include_fonts)
             return Response(
                 content=json.dumps(result),
                 media_type="application/json",

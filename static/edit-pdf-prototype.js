@@ -4,6 +4,7 @@ const saveBtn=byId('save'),applyBtn=byId('apply'),undoBtn=byId('undo'),redoBtn=b
 const boldBtn=byId('bold'),italicBtn=byId('italic'),fontPicker=byId('font-family'),sizePicker=byId('font-size'),colorPicker=byId('font-color'),zoomPicker=byId('zoom'),widthHandle=byId('width-handle');
 let changes=[],history=[],future=[],chosen=null,spanElements=new Map(),loadedFile=null,verifiedPdf=null,originalPages=[],requestId=0,busy=false,fontLoading=false,fontError=false,fontToken=0;
 const fontLoads=new Map();
+const originalFonts=new Map();
 const fontLabels=new Map(),fontSources=new Map(),clipboardType='application/x-pdfaspect-text+json';
 let documentId='',lastCopied=null,plainPasteUntil=0;
 const changeKey=c=>[c.page,c.old_text,c.occurrence].join('\u0000');
@@ -12,14 +13,21 @@ const isBold=span=>Boolean(span.flags&16)||/bold|demi|black/i.test(span.font);
 const isItalic=span=>Boolean(span.flags&2)||/italic|oblique/i.test(span.font);
 const hexColor=value=>'#'+value.toString(16).padStart(6,'0');
 const sourceSpan=current=>spanElements.get(changeKey(current.fontSource??current.change))?.span??current.record.span;
+const fontNameKey=name=>name.replace(/^[A-Z]{6}\+/,'').replace(/[^a-z0-9]/gi,'').toLowerCase();
+const fontFamilyKey=name=>fontNameKey(name).replace(/(?:semibold|bold|italic|oblique|regular|roman|demi|black|psmt|mt)+$/g,'');
 function knownFamily(name){
-  const normalized=name.replace(/^[A-Z]{6}\+/,'').replace(/[^a-z0-9]/gi,'').toLowerCase();
+  const normalized=fontNameKey(name);
   for(const [id,label] of [...fontLabels].sort((a,b)=>b[1].length-a[1].length)){
     if(normalized.startsWith(label.replace(/[^a-z0-9]/gi,'').toLowerCase()))return id;
   }
   return null;
 }
 function syncFormatControls(){
+  const originalOption=fontPicker.querySelector('option[value="original"]');
+  originalOption.textContent='Original: '+chosen.record.span.font.replace(/^[A-Z]{6}\+/,'');
+  originalOption.title=chosen.record.span.font;
+  const activeName=chosen.family==='original'?sourceSpan(chosen).font:fontLabels.get(chosen.family);
+  selection.textContent='Page '+(chosen.change.page+1)+' · '+(fontLabels.get(knownFamily(activeName))??activeName.replace(/^[A-Z]{6}\+/,''));
   fontPicker.querySelector('option[value="copied-original"]')?.remove();
   if(chosen.fontSource){
     const option=document.createElement('option');option.value='copied-original';
@@ -94,18 +102,44 @@ async function loadFont(family,bold,italic){
   }
   await fontLoads.get(key);
 }
+async function loadOriginalFont(font){
+  if(!font.face){
+    const bytes=Uint8Array.from(atob(font.data),char=>char.charCodeAt(0));
+    font.face=new FontFace('PDFaspect-document-'+documentId+'-'+font.id,bytes,
+      {weight:font.bold?'700':'400',style:font.italic?'italic':'normal'});
+    const currentDocument=documentId;
+    font.loading=font.face.load().then(face=>{if(documentId===currentDocument)document.fonts.add(face);return face});
+  }
+  return font.loading;
+}
+function originalFontFor(span,bold,italic){
+  const exact=originalFonts.get(span.browser_font);
+  if(exact&&exact.bold===bold&&exact.italic===italic)return exact;
+  return [...originalFonts.values()].find(font=>fontFamilyKey(font.name)===fontFamilyKey(span.font)&&
+    font.bold===bold&&font.italic===italic);
+}
 async function updateInputStyle(){
   if(!chosen)return;
   const current=chosen,token=++fontToken,span=sourceSpan(current);
-  const displayFamily=current.family==='original'?(current.fontSource?knownFamily(span.font):null):current.family;
+  const embedded=current.family==='original'?originalFontFor(span,current.bold,current.italic):null;
+  const displayFamily=current.family==='original'?knownFamily(span.font):current.family;
   const scale=current.record.el.closest('.page').clientWidth/current.record.info.width;
   replacement.style.fontSize=(current.size*scale)+'px';
   replacement.style.fontWeight=current.bold?'700':'400';replacement.style.fontStyle=current.italic?'italic':'normal';
   replacement.style.color=hexColor(current.color);
-  replacement.style.fontFamily=displayFamily?'"PDFaspect-'+displayFamily+'"':fallbackFamily(span);
-  fontError=false;fontLoading=Boolean(displayFamily);refresh();resizeInput();
+  replacement.style.fontFamily=embedded?'"PDFaspect-document-'+documentId+'-'+embedded.id+'"':
+    displayFamily?'"PDFaspect-'+displayFamily+'"':fallbackFamily(span);
+  fontError=false;fontLoading=Boolean(embedded||displayFamily);refresh();resizeInput();
   try{
-    if(fontLoading)await loadFont(displayFamily,current.bold,current.italic);
+    if(embedded){
+      try{await loadOriginalFont(embedded)}catch(err){
+        if(token!==fontToken||chosen!==current)return;
+        replacement.style.fontFamily=displayFamily?'"PDFaspect-'+displayFamily+'"':fallbackFamily(span);
+        if(displayFamily)await loadFont(displayFamily,current.bold,current.italic);
+        status.textContent='This font cannot be displayed while typing. Apply the text to view its PDF font.';
+      }
+    }
+    else if(displayFamily)await loadFont(displayFamily,current.bold,current.italic);
     if(token!==fontToken||chosen!==current)return;
     fontLoading=false;resizeInput();refresh();
   }catch(err){
@@ -136,16 +170,27 @@ function copySelection(event){
   lastCopied=format;event.preventDefault();
   if(event.type==='cut')insertClipboardText('');
 }
-function readCopiedFormat(data,text){
+function recordFormat(record){
+  const change=changes.find(item=>changeKey(item)===changeKey({page:record.info.page,old_text:record.span.text,occurrence:record.span.occurrence}));
+  const source=change?.font_source?spanElements.get(changeKey(change.font_source))??record:record;
+  return {family:change?.font_family??'original',fontName:source.span.font,
+    fontSource:change?.font_family?null:{page:source.info.page,old_text:source.span.text,occurrence:source.span.occurrence},
+    bold:change?.bold??isBold(source.span),italic:change?.italic??isItalic(source.span),
+    size:change?.font_size??record.span.size,color:change?.color??record.span.color,
+    text:change?.new_text??record.span.text};
+}
+function findSourceFormat(name,bold,italic){
+  const names=name.split(',').map(value=>value.trim().replace(/^['"]|['"]$/g,''));
+  for(const label of names){
+    const candidates=[...spanElements.values()].map(recordFormat).filter(format=>format.family==='original'&&
+      (fontNameKey(format.fontName)===fontNameKey(label)||fontFamilyKey(format.fontName)===fontFamilyKey(label))&&
+      (bold===undefined||format.bold===bold)&&(italic===undefined||format.italic===italic));
+    if(candidates.length)return candidates[0];
+  }
+  return null;
+}
+function validateCopiedFormat(format,text){
   try{
-    const custom=data.getData(clipboardType),html=data.getData('text/html');
-    let format=custom?JSON.parse(custom):null;
-    if(!format&&html.length<=100000&&html.includes('data-pdfaspect-format')){
-      const template=document.createElement('template');template.innerHTML=html;
-      const node=template.content.querySelector('[data-pdfaspect-format]');
-      if(node)format=JSON.parse(node.getAttribute('data-pdfaspect-format'));
-    }
-    if(!format&&!html&&lastCopied?.text===text)format=lastCopied;
     if(!format||format.version!==1||typeof format.text!=='string'||format.text.replace(/\r\n?/g,'\n')!==text||
       typeof format.bold!=='boolean'||typeof format.italic!=='boolean'||
       typeof format.size!=='number'||!Number.isFinite(format.size)||format.size<4||format.size>144||
@@ -153,11 +198,91 @@ function readCopiedFormat(data,text){
     if(format.family==='original'){
       const source=fontSources.get(format.sourceId);
       if(format.documentId===documentId&&source)return {...format,fontSource:{...source}};
+      const original=typeof format.fontName==='string'?findSourceFormat(format.fontName,format.bold,format.italic):null;
+      if(original)return {...format,fontSource:original.fontSource};
       const family=typeof format.fontName==='string'?knownFamily(format.fontName):null;
       return family?{...format,family,fontSource:null}:null;
     }
     return fontLabels.has(format.family)?{...format,fontSource:null}:null;
   }catch{return null}
+}
+function htmlClipboardFormat(template){
+  const sheets=[];
+  for(const style of template.content.querySelectorAll('style')){
+    try{const sheet=new CSSStyleSheet();sheet.replaceSync(style.textContent);sheets.push(sheet)}catch{}
+  }
+  const colour=value=>{
+    if(!CSS.supports('color',value)||/var\(|currentcolor|inherit|initial|unset|transparent/i.test(value))return undefined;
+    const canvas=document.createElement('canvas'),context=canvas.getContext('2d');context.fillStyle=value;
+    const result=context.fillStyle;
+    if(/^#[0-9a-f]{6}$/i.test(result))return parseInt(result.slice(1),16);
+    const rgb=result.match(/^rgba?\(\s*([\d.]+),\s*([\d.]+),\s*([\d.]+)/);
+    return rgb?Math.round(Number(rgb[1]))*65536+Math.round(Number(rgb[2]))*256+Math.round(Number(rgb[3])):undefined;
+  };
+  const size=(value,parent)=>{
+    const match=value.trim().match(/^([\d.]+)(pt|px|em|rem|%)$/i);if(!match)return undefined;
+    const number=Number(match[1]),unit=match[2].toLowerCase();
+    const result=number*(unit==='px'?0.75:unit==='em'?(parent??12):unit==='rem'?12:unit==='%'?(parent??12)/100:1);
+    return Number.isFinite(result)&&result>=4&&result<=144?result:undefined;
+  };
+  const apply=(format,style)=>{
+    if(style.fontFamily)format.fontName=style.fontFamily;
+    if(style.fontSize){const value=size(style.fontSize,format.size);if(value!==undefined)format.size=value}
+    if(style.fontWeight&&/^(normal|bold|bolder|[1-9]00)$/.test(style.fontWeight))
+      format.bold=/bold/.test(style.fontWeight)||Number(style.fontWeight)>=600;
+    if(style.fontStyle&&/^(normal|italic|oblique)/.test(style.fontStyle))format.italic=style.fontStyle!=='normal';
+    if(style.color){const value=colour(style.color);if(value!==undefined)format.color=value}
+  };
+  const walker=document.createTreeWalker(template.content,NodeFilter.SHOW_TEXT);let node,uniform=null;
+  while((node=walker.nextNode())){
+    if(!node.textContent.trim()||node.parentElement?.closest('style,script,title,noscript'))continue;
+    const parents=[];for(let parent=node.parentElement;parent;parent=parent.parentElement)parents.unshift(parent);
+    const format={};
+    for(const element of parents){
+      if(element.matches('b,strong'))format.bold=true;
+      if(element.matches('i,em'))format.italic=true;
+      if(element.matches('font[face]'))format.fontName=element.getAttribute('face');
+      for(const sheet of sheets)for(const rule of sheet.cssRules){
+        if(rule.selectorText){try{if(element.matches(rule.selectorText))apply(format,rule.style)}catch{}}
+      }
+      apply(format,element.style);
+    }
+    if(!Object.keys(format).length)return null;
+    const signature=value=>JSON.stringify([value.fontName??null,value.size??null,value.bold??null,value.italic??null,value.color??null]);
+    if(uniform&&signature(uniform)!==signature(format))return {mixed:true};
+    uniform=format;
+  }
+  return uniform;
+}
+function readCopiedFormat(data,text){
+  const custom=data.getData(clipboardType),html=data.getData('text/html');let template=null;
+  try{
+    if(custom){const format=validateCopiedFormat(JSON.parse(custom),text);if(format)return format}
+  }catch{}
+  if(html&&html.length<=100000){
+    template=document.createElement('template');template.innerHTML=html;
+    const node=template.content.querySelector('[data-pdfaspect-format]');
+    if(node){try{const format=validateCopiedFormat(JSON.parse(node.getAttribute('data-pdfaspect-format')),text);if(format)return format}catch{}}
+    const style=htmlClipboardFormat(template);
+    if(style?.mixed)return {mixed:true};
+    if(style){
+      const source=style.fontName?findSourceFormat(style.fontName,style.bold,style.italic):null;
+      const family=style.fontName?knownFamily(style.fontName):null;
+      if(style.fontName&&!source&&!family&&lastCopied?.text.replace(/\r\n?/g,'\n')===text){
+        const previous=validateCopiedFormat(lastCopied,text);if(previous)return previous;
+      }
+      return {...(source??{family:chosen.family,fontSource:chosen.fontSource,bold:chosen.bold,italic:chosen.italic,size:chosen.size,color:chosen.color}),
+        ...style,family:source?'original':family??chosen.family,fontSource:source?.fontSource??(family?null:chosen.fontSource),
+        unavailableFont:style.fontName&&!source&&!family?style.fontName:null};
+    }
+  }
+  if(lastCopied?.text.replace(/\r\n?/g,'\n')===text){const format=validateCopiedFormat(lastCopied,text);if(format)return format}
+  // PDF viewers and some phone keyboards provide only text. Recover a unique
+  // matching block's format from this PDF instead of adopting the destination font.
+  const normalize=value=>value.replace(/\s+/g,' ').trim();
+  const matches=[...spanElements.values()].map(recordFormat).filter(format=>normalize(format.text)===normalize(text));
+  const formats=new Set(matches.map(format=>JSON.stringify([format.family,format.fontName,format.bold,format.italic,format.size,format.color])));
+  return formats.size===1?matches[0]:null;
 }
 function insertClipboardText(text){
   const start=replacement.selectionStart,end=replacement.selectionEnd;
@@ -174,20 +299,23 @@ replacement.addEventListener('paste',event=>{
   const plain=performance.now()<plainPasteUntil;plainPasteUntil=0;
   const text=event.clipboardData.getData('text/plain').replace(/\r\n?/g,'\n');
   const format=plain?null:readCopiedFormat(event.clipboardData,text);
+  if(format?.mixed){status.textContent='The pasted text has several styles. This editor formats one block at a time; choose the font for this block.';return}
   if(!format)return;
   event.preventDefault();insertClipboardText(text);
   Object.assign(chosen,{family:format.family,fontSource:format.fontSource??null,
     bold:format.bold,italic:format.italic,size:format.size,color:format.color});
   syncFormatControls();updateInputStyle();
-  status.textContent='Pasted with the source font and formatting. Ctrl+Shift+V pastes text only.';
+  status.textContent=format.unavailableFont?'The clipboard font '+format.unavailableFont+' is unavailable in this PDF. Choose a font for the pasted text.':
+    'Pasted with the source font and formatting. Ctrl+Shift+V pastes text only.';
 });
 async function responseError(response){
   let message='HTTP '+response.status;
   try{message=(await response.json()).detail||message}catch{}
   return new Error(message);
 }
-async function inspect(source){
+async function inspect(source,includeFonts=true){
   const form=new FormData();form.append('file',source,source.name||'edited.pdf');
+  form.append('include_fonts',String(includeFonts));
   const response=await fetch('/api/experimental/inspect-pdf',{method:'POST',body:form});
   if(!response.ok)throw await responseError(response);
   return response.json();
@@ -200,7 +328,7 @@ async function renderChanges(next){
   const boxes=JSON.parse(response.headers.get('X-PDFaspect-Edit-Boxes')||'[]');
   if(boxes.length!==next.length)throw new Error('Edited text positions are unavailable. Reload the editor.');
   const substitutions=Number(response.headers.get('X-PDFaspect-Font-Substitutions')||0);
-  const blob=await response.blob(),rendered=await inspect(blob);
+  const blob=await response.blob(),rendered=await inspect(blob,false);
   if(rendered.pages.length!==originalPages.length)throw new Error('Preview page count changed unexpectedly.');
   return {blob,images:rendered.pages.map(p=>p.image),boxes,substitutions};
 }
@@ -305,7 +433,10 @@ file.addEventListener('change',async()=>{
     if(source.size>10*1024*1024)throw new Error('PDF exceeds the 10 MB editor limit.');
     status.textContent='Checking editable text…';
     const inspected=await inspect(source);if(current!==requestId)return;
-    loadedFile=source;documentId=crypto.randomUUID();originalPages=inspected.pages;buildPages();
+    loadedFile=source;documentId=crypto.randomUUID();
+    for(const font of originalFonts.values())if(font.face)document.fonts.delete(font.face);
+    originalFonts.clear();for(const font of inspected.fonts??[])originalFonts.set(font.id,font);
+    originalPages=inspected.pages;buildPages();
     status.textContent='Loaded '+originalPages.length+' pages. Click or double-click text to edit directly.';
     if(!originalPages.some(p=>p.spans.length))status.textContent='No selectable text found. Scanned PDFs need OCR before editing.';
   }catch(err){if(current===requestId)status.textContent='Unable to open PDF: '+err.message}

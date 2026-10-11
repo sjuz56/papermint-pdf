@@ -1,5 +1,6 @@
 """Integration tests for the feature-flagged experimental PDF editor API."""
 import io
+import base64
 import json
 import os
 import unittest
@@ -10,6 +11,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from papermint_edit_api import router
+from papermint_edit_engine import editing_font_path
 
 
 def sample_pdf(rotated=False):
@@ -90,6 +92,51 @@ class PdfEditApiTests(unittest.TestCase):
             )
             self.assertEqual(response.status_code, 422)
             self.assertIn("rotated", response.json()["detail"])
+
+    def embedded_font_pdf(self):
+        with fitz.open() as doc:
+            for _ in range(2):
+                page = doc.new_page()
+                page.insert_text((72, 100), "Původní písmo", fontsize=17, fontname="embedded",
+                                 fontfile=str(editing_font_path("dejavu-serif", True, True)))
+                page.insert_text((72, 200), "Base14", fontsize=12)
+            return doc.tobytes()
+
+    def test_inspection_exposes_deduplicated_original_font_for_typing(self):
+        with patch.dict(os.environ, {"PAPERMINT_ENABLE_EXPERIMENTAL_EDIT_PDF": "1"}):
+            response = self.client.post("/api/experimental/inspect-pdf",
+                files={"file": ("fonts.pdf", self.embedded_font_pdf(), "application/pdf")})
+            self.assertEqual(response.status_code, 200)
+            result = response.json()
+            self.assertEqual(len(result["fonts"]), 1)
+            font = result["fonts"][0]
+            self.assertTrue(font["bold"])
+            self.assertTrue(font["italic"])
+            self.assertEqual(base64.b64decode(font["data"]), editing_font_path("dejavu-serif", True, True).read_bytes())
+            for page in result["pages"]:
+                self.assertEqual(page["spans"][0]["browser_font"], font["id"])
+                self.assertNotIn("browser_font", page["spans"][1])
+            self.assertEqual(response.headers["cache-control"], "no-store")
+
+    def test_rendered_preview_can_skip_font_payloads(self):
+        with patch.dict(os.environ, {"PAPERMINT_ENABLE_EXPERIMENTAL_EDIT_PDF": "1"}):
+            response = self.client.post("/api/experimental/inspect-pdf",
+                files={"file": ("fonts.pdf", self.embedded_font_pdf(), "application/pdf")},
+                data={"include_fonts": "false"})
+            self.assertEqual(response.status_code, 200)
+            result = response.json()
+            self.assertEqual(result["fonts"], [])
+            self.assertTrue(result["pages"][0]["image"].startswith("data:image/png;base64,"))
+            self.assertNotIn("browser_font", result["pages"][0]["spans"][0])
+
+    def test_browser_font_payload_limit_does_not_block_pdf_inspection(self):
+        with patch.dict(os.environ, {"PAPERMINT_ENABLE_EXPERIMENTAL_EDIT_PDF": "1"}), \
+                patch("papermint_edit_api.MAX_BROWSER_FONT_BYTES", 1):
+            response = self.client.post("/api/experimental/inspect-pdf",
+                files={"file": ("fonts.pdf", self.embedded_font_pdf(), "application/pdf")})
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json()["fonts"], [])
+            self.assertEqual(response.json()["pages"][0]["spans"][0]["text"], "Původní písmo")
 
     def test_reject_malformed_edit_payload(self):
         with patch.dict(os.environ, {"PAPERMINT_ENABLE_EXPERIMENTAL_EDIT_PDF": "1"}):
