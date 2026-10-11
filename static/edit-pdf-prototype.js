@@ -392,6 +392,21 @@ function buildPages(){
     wrapper.style.setProperty('--page-ratio',info.width+'/'+info.height);
     const image=document.createElement('img');image.src=info.image;image.alt='PDF page '+(index+1);
     wrapper.append(image);pages.append(wrapper);
+    // Show the exact image embedded in a signature widget, not a recreated label.
+    // This is a visual preview layer only; the downloaded PDF is untouched.
+    for(const signature of info.signature_previews||[]){
+      const overlay=document.createElement('img');
+      overlay.src=signature.image;
+      overlay.alt='Original PDF signature appearance';
+      overlay.className='signature-preview';
+      const [x0,y0,x1,y1]=signature.bbox;
+      Object.assign(overlay.style,{
+        position:'absolute',left:(x0/info.width*100)+'%',top:(y0/info.height*100)+'%',
+        width:((x1-x0)/info.width*100)+'%',height:((y1-y0)/info.height*100)+'%',
+        objectFit:'fill',pointerEvents:'none',zIndex:'1'
+      });
+      wrapper.append(overlay);
+    }
     for(const span of info.spans){
       const el=document.createElement('div');el.className='span';el.tabIndex=0;el.setAttribute('role','button');
       const change={page:index,old_text:span.text,new_text:span.text,occurrence:span.occurrence};
