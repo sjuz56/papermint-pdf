@@ -390,7 +390,7 @@ function buildPages(){
     for(const span of info.spans){
       const el=document.createElement('div');el.className='span';el.tabIndex=0;el.setAttribute('role','button');
       const change={page:index,old_text:span.text,new_text:span.text,occurrence:span.occurrence};
-      const record={el,span,info,displayBBox:span.bbox,fontId:crypto.randomUUID()};position(record,span.bbox);spanElements.set(changeKey(change),record);
+      const record={el,span,info,displayBBox:span.bbox,fontId:changeKey(change)};position(record,span.bbox);spanElements.set(changeKey(change),record);
       fontSources.set(record.fontId,{page:index,old_text:span.text,occurrence:span.occurrence});
       const pick=async()=>{
         if(busy)return;
