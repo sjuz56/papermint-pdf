@@ -443,6 +443,21 @@ def replace_text(pdf_path: str, output_path: str, changes: list[TextReplacement]
                     continue
                 if any(op["area"].intersects(fitz.Rect(s["bbox"])) for s in neighbour["members"]):
                     raise PdfEditError("Replacement overlaps neighbouring text; shorten the text")
+        # Preserve signature and form widget appearances during unrelated edits.
+        def widget_appearances(document):
+            result = []
+            for page_number in range(len(document)):
+                for widget in document[page_number].widgets() or []:
+                    kind, appearance = document.xref_get_key(widget.xref, "AP")
+                    result.append((page_number, widget.field_name, widget.field_type,
+                                   tuple(round(v, 3) for v in widget.rect),
+                                   kind, appearance))
+            return result
+        original_widgets = widget_appearances(doc)
+        for op in operations:
+            for widget in doc[op["page"]].widgets() or []:
+                if op["area"].intersects(widget.rect):
+                    raise PdfEditError("Text edit overlaps a PDF form or signature field")
         for op in operations:
             for member in op["block"]["members"]:
                 doc[op["page"]].add_redact_annot(member["bbox"], fill=False, cross_out=False)
@@ -473,6 +488,8 @@ def replace_text(pdf_path: str, output_path: str, changes: list[TextReplacement]
             doc.save(str(temporary), garbage=4, deflate=True)
             with fitz.open(temporary) as saved:
                 _verify(saved, operations)
+                if widget_appearances(saved) != original_widgets:
+                    raise PdfEditError("PDF form or signature appearance changed during export")
             os.replace(temporary, output)
         finally:
             temporary.unlink(missing_ok=True)
