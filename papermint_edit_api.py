@@ -30,6 +30,53 @@ MAX_TOTAL_BROWSER_FONT_BYTES = 8 * 1024 * 1024
 
 
 
+def _signature_preview_images(doc, page):
+    """Read a single raster signature appearance for browser preview only.
+
+    Some PDF renderers draw the widget at an unreadably small scale. This
+    extracts its existing image; it does not create or alter a signature.
+    """
+    import fitz
+    previews = []
+    for widget in page.widgets() or []:
+        if widget.field_type != fitz.PDF_WIDGET_TYPE_SIGNATURE:
+            continue
+        kind, ap = doc.xref_get_key(widget.xref, "AP/N")
+        if kind != "xref":
+            continue
+        pending = [int(ap.split()[0])]
+        visited = set()
+        images = []
+        while pending and len(visited) < 32:
+            xref = pending.pop()
+            if xref in visited:
+                continue
+            visited.add(xref)
+            obj = doc.xref_object(xref)
+            if "/Subtype /Image" in obj:
+                images.append(xref)
+                continue
+            if "/Subtype /Form" not in obj:
+                continue
+            for match in re.finditer(r"/[A-Za-z0-9_.-]+\\s+(\\d+)\\s+0\\s+R", obj):
+                candidate = int(match.group(1))
+                if candidate not in visited:
+                    pending.append(candidate)
+        if len(images) != 1:
+            continue
+        try:
+            extracted = doc.extract_image(images[0])
+            if extracted["ext"] not in {"jpeg", "png"} or len(extracted["image"]) > 300_000:
+                continue
+            rect = widget.rect
+            previews.append({"bbox": list(rect), "image": "data:image/" +
+                ("jpeg" if extracted["ext"] == "jpeg" else "png") + ";base64," +
+                base64.b64encode(extracted["image"]).decode("ascii")})
+        except (RuntimeError, ValueError, KeyError):
+            continue
+    return previews
+
+
 def _inspect_document(source: Path, include_fonts: bool = True) -> dict:
     """Render PDF previews outside the async request event loop."""
     import fitz
@@ -115,6 +162,7 @@ def _inspect_document(source: Path, include_fonts: bool = True) -> dict:
                 "width": pix.width / 1.4,
                 "height": pix.height / 1.4,
                 "spans": spans,
+                "signature_previews": _signature_preview_images(doc, doc[number]),
             })
     return {"pages": pages, "fonts": list(fonts.values())}
 
