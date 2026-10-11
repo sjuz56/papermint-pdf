@@ -5,7 +5,7 @@ const boldBtn=byId('bold'),italicBtn=byId('italic'),fontPicker=byId('font-family
 let changes=[],history=[],future=[],chosen=null,spanElements=new Map(),loadedFile=null,verifiedPdf=null,originalPages=[],requestId=0,busy=false,fontLoading=false,fontError=false,fontToken=0;
 const fontLoads=new Map();
 const originalFonts=new Map();
-const fontLabels=new Map(),fontSources=new Map(),clipboardType='application/x-pdfaspect-text+json';
+const fontLabels=new Map(),fontSources=new Map(),fontIdentities=new Map(),clipboardType='application/x-pdfaspect-text+json';
 let documentId='',lastCopied=null,plainPasteUntil=0;
 const changeKey=c=>[c.page,c.old_text,c.occurrence].join('\u0000');
 const copyChanges=value=>value.map(c=>({...c}));
@@ -380,6 +380,11 @@ function applyZoom(){
   });
   updateInputStyle();
 }
+function stableFontId(change){
+  const key=changeKey(change);
+  if(!fontIdentities.has(key))fontIdentities.set(key,crypto.randomUUID());
+  return fontIdentities.get(key);
+}
 function buildPages(){
   pages.replaceChildren();spanElements.clear();fontSources.clear();
   originalPages.forEach((info,index)=>{
@@ -390,7 +395,7 @@ function buildPages(){
     for(const span of info.spans){
       const el=document.createElement('div');el.className='span';el.tabIndex=0;el.setAttribute('role','button');
       const change={page:index,old_text:span.text,new_text:span.text,occurrence:span.occurrence};
-      const record={el,span,info,displayBBox:span.bbox,fontId:changeKey(change)};position(record,span.bbox);spanElements.set(changeKey(change),record);
+      const record={el,span,info,displayBBox:span.bbox,fontId:stableFontId(change)};position(record,span.bbox);spanElements.set(changeKey(change),record);
       fontSources.set(record.fontId,{page:index,old_text:span.text,occurrence:span.occurrence});
       const pick=async()=>{
         if(busy)return;
@@ -433,7 +438,7 @@ file.addEventListener('change',async()=>{
     if(source.size>10*1024*1024)throw new Error('PDF exceeds the 10 MB editor limit.');
     status.textContent='Checking editable text…';
     const inspected=await inspect(source);if(current!==requestId)return;
-    loadedFile=source;documentId=crypto.randomUUID();
+    loadedFile=source;documentId=crypto.randomUUID();fontIdentities.clear();
     for(const font of originalFonts.values())if(font.face)document.fonts.delete(font.face);
     originalFonts.clear();for(const font of inspected.fonts??[])originalFonts.set(font.id,font);
     originalPages=inspected.pages;buildPages();
