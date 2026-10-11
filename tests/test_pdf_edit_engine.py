@@ -619,5 +619,26 @@ class TestPdfTextEdit(unittest.TestCase):
             self.assertEqual(before, after)
             self.assertTrue(doc[0].get_images())
 
+
+    def test_preserves_vector_signature_during_text_edit(self):
+        """A signature drawn as PDF vector strokes must survive text redaction."""
+        with fitz.open(self.source) as doc:
+            page = doc[0]
+            shape = page.new_shape()
+            shape.draw_bezier(fitz.Point(74, 106), fitz.Point(90, 78),
+                              fitz.Point(104, 125), fitz.Point(132, 92))
+            shape.finish(color=(0, 0, 0.7), width=1.6)
+            shape.commit()
+            doc.save(self.source + ".tmp")
+        Path(self.source + ".tmp").replace(self.source)
+        with fitz.open(self.source) as doc:
+            before = len(doc[0].get_drawings())
+        replace_text(self.source, self.output, [
+            TextReplacement(0, "Invoice 1234", "Invoice 12")
+        ])
+        with fitz.open(self.output) as doc:
+            self.assertGreaterEqual(len(doc[0].get_drawings()), before)
+            self.assertIn("Invoice 12", doc[0].get_text())
+
 if __name__ == "__main__":
     unittest.main()
