@@ -600,5 +600,24 @@ class TestPdfTextEdit(unittest.TestCase):
         self.assertFalse(Path(self.output).exists())
 
 
+
+    def test_edit_preserves_overlapping_image(self):
+        """Replacing text must not blank an image beneath its bounding box."""
+        import zlib
+        with fitz.open(self.source) as doc:
+            page = doc[0]
+            pix = fitz.Pixmap(fitz.csRGB, fitz.IRect(0, 0, 40, 40), False)
+            pix.clear_with(0x2288CC)
+            page.insert_image(fitz.Rect(65, 85, 180, 115), pixmap=pix, overlay=False)
+            doc.save(self.source + ".tmp")
+        Path(self.source + ".tmp").replace(self.source)
+        with fitz.open(self.source) as doc:
+            before = doc[0].get_pixmap(clip=fitz.Rect(75, 86, 90, 91)).samples
+        replace_text(self.source, self.output, [TextReplacement(0, "Invoice 1234", "Invoice 12")])
+        with fitz.open(self.output) as doc:
+            after = doc[0].get_pixmap(clip=fitz.Rect(75, 86, 90, 91)).samples
+            self.assertEqual(before, after)
+            self.assertTrue(doc[0].get_images())
+
 if __name__ == "__main__":
     unittest.main()
