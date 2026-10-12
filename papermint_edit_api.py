@@ -58,7 +58,7 @@ def _signature_preview_images(doc, page):
                 continue
             if "/Subtype /Form" not in obj:
                 continue
-            for match in re.finditer(r"/[A-Za-z0-9_.-]+\\s+(\\d+)\\s+0\\s+R", obj):
+            for match in re.finditer(r"/[A-Za-z0-9_.-]+\s+(\d+)\s+0\s+R", obj):
                 candidate = int(match.group(1))
                 if candidate not in visited:
                     pending.append(candidate)
