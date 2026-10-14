@@ -67,7 +67,7 @@ function refresh(){
     el.setAttribute('aria-label','Edit '+(change?change.new_text:record.span.text));
     el.classList.toggle('editing',chosen?.record===record);
   }
-  const ready=!busy&&!fontLoading&&!fontError&&(!chosen||sizePicker.validity.valid);
+  const ready=!busy&&(!chosen||sizePicker.validity.valid);
   saveBtn.disabled=!ready||!loadedFile||(!changes.length&&!chosen);
   applyBtn.disabled=!ready||!chosen;cancelBtn.disabled=busy;
   undoBtn.disabled=busy||(!history.length&&!draftDirty());redoBtn.disabled=busy||!future.length;
@@ -145,7 +145,7 @@ async function updateInputStyle(){
   }catch(err){
     if(token!==fontToken||chosen!==current)return;
     fontLoading=false;fontError=true;refresh();
-    status.textContent='Unable to load this font. Choose another font or Original.';
+    status.textContent='Font preview unavailable; you can still apply your text or choose another font.';
   }
 }
 function toggleStyle(property){
@@ -346,7 +346,7 @@ async function showResult(next,result){
   verifiedPdf=result.blob;
 }
 async function applyCurrent(){
-  if(busy||fontLoading||fontError||!chosen)return false;
+  if(busy||!chosen)return false;
   if(!sizePicker.validity.valid){sizePicker.reportValidity();return false}
   const next=draftChanges();
   if(JSON.stringify(next)===JSON.stringify(changes)){closeEditor();return true}
@@ -504,7 +504,7 @@ widthHandle.addEventListener('keydown',event=>{
   }
 });
 pages.addEventListener('click',event=>{if(chosen&&!event.target.closest('.span'))applyCurrent()});
-applyBtn.addEventListener('click',applyCurrent);cancelBtn.addEventListener('click',closeEditor);
+applyBtn.addEventListener('click',()=>{status.textContent='Applying your text…';applyCurrent().catch(err=>{status.textContent='Unable to apply text: '+err.message})});cancelBtn.addEventListener('click',closeEditor);
 async function restoreHistory(redo=false){
   if(busy)return;
   if(!redo&&draftDirty()){closeEditor();status.textContent='Unapplied changes cancelled.';return}
