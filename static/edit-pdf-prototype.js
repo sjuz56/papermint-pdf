@@ -69,7 +69,7 @@ function refresh(){
   }
   const ready=!busy&&(!chosen||sizePicker.validity.valid);
   saveBtn.disabled=!ready||!loadedFile||(!changes.length&&!chosen);
-  applyBtn.disabled=!ready||!chosen;cancelBtn.disabled=busy;
+  applyBtn.disabled=busy||!chosen;cancelBtn.disabled=busy;
   undoBtn.disabled=busy||(!history.length&&!draftDirty());redoBtn.disabled=busy||!future.length;
   replacement.disabled=busy;file.disabled=busy;zoomPicker.disabled=busy||!loadedFile;
   for(const control of [boldBtn,italicBtn,fontPicker,sizePicker,colorPicker])control.disabled=busy||!chosen;
@@ -347,9 +347,10 @@ async function showResult(next,result){
 }
 async function applyCurrent(){
   if(busy||!chosen)return false;
-  if(!sizePicker.validity.valid){sizePicker.reportValidity();return false}
-  const next=draftChanges();
-  if(JSON.stringify(next)===JSON.stringify(changes)){closeEditor();return true}
+  if(!sizePicker.validity.valid){status.textContent='Invalid font size. Choose a number between 4 and 144.';sizePicker.reportValidity();return false}
+  let next;
+  try{next=draftChanges()}catch(err){status.textContent='Unable to prepare changes: '+err.message;return false}
+  if(JSON.stringify(next)===JSON.stringify(changes)){closeEditor();status.textContent='No text changes to apply.';return true}
   busy=true;refresh();status.textContent='Applying text and rendering the PDF…';const current=requestId;
   try{
     const result=await renderChanges(next);
@@ -504,7 +505,7 @@ widthHandle.addEventListener('keydown',event=>{
   }
 });
 pages.addEventListener('click',event=>{if(chosen&&!event.target.closest('.span'))applyCurrent()});
-applyBtn.addEventListener('click',()=>{status.textContent='Applying your text…';applyCurrent().catch(err=>{status.textContent='Unable to apply text: '+err.message})});cancelBtn.addEventListener('click',closeEditor);
+applyBtn.addEventListener('click',async()=>{status.textContent='Apply clicked — preparing PDF…';applyBtn.textContent='Applying…';try{await applyCurrent()}catch(err){status.textContent='Unable to apply text: '+err.message}finally{applyBtn.textContent='Apply text'}});cancelBtn.addEventListener('click',closeEditor);
 async function restoreHistory(redo=false){
   if(busy)return;
   if(!redo&&draftDirty()){closeEditor();status.textContent='Unapplied changes cancelled.';return}
