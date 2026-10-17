@@ -455,8 +455,13 @@ function buildPages(){
   });
   applyZoom();refresh();
 }
-file.addEventListener('change',async()=>{
-  const source=file.files[0];if(!source)return;
+let lastUploadToken='';
+async function handlePdfSelection(source){
+  if(!source){status.textContent='No PDF selected. Please choose a PDF file.';return}
+  const token=[source.name,source.size,source.lastModified].join(':');
+  if(token===lastUploadToken)return;
+  lastUploadToken=token;
+  setTimeout(()=>{if(lastUploadToken===token)lastUploadToken=''},1500);
   status.textContent='Selected '+source.name+' — opening PDF…';
   const current=++requestId;closeEditor();loadedFile=null;verifiedPdf=null;changes=[];history=[];future=[];originalPages=[];
   pages.replaceChildren();spanElements.clear();busy=true;refresh();
@@ -472,7 +477,15 @@ file.addEventListener('change',async()=>{
     if(!originalPages.some(p=>p.spans.length))status.textContent='No selectable text found. Scanned PDFs need OCR before editing.';
   }catch(err){if(current===requestId)status.textContent='Unable to open PDF: '+err.message}
   finally{if(current===requestId){busy=false;refresh();file.value=''}}
-});
+}
+file.addEventListener('change',()=>handlePdfSelection(file.files?.[0]));
+file.addEventListener('input',()=>handlePdfSelection(file.files?.[0]));
+const dropZone=document.getElementById('upload-dropzone');
+if(dropZone){
+  dropZone.addEventListener('dragover',event=>{event.preventDefault();dropZone.classList.add('drag-over')});
+  dropZone.addEventListener('dragleave',()=>dropZone.classList.remove('drag-over'));
+  dropZone.addEventListener('drop',event=>{event.preventDefault();dropZone.classList.remove('drag-over');handlePdfSelection(event.dataTransfer?.files?.[0])});
+}
 replacement.addEventListener('input',()=>{resizeInput();refresh()});
 replacement.addEventListener('keydown',event=>{
   if(event.key.toLowerCase()==='v'&&(event.ctrlKey||event.metaKey))plainPasteUntil=event.shiftKey?performance.now()+1000:0;
