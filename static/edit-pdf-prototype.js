@@ -457,6 +457,7 @@ function buildPages(){
 }
 file.addEventListener('change',async()=>{
   const source=file.files[0];if(!source)return;
+  status.textContent='Selected '+source.name+' — opening PDF…';
   const current=++requestId;closeEditor();loadedFile=null;verifiedPdf=null;changes=[];history=[];future=[];originalPages=[];
   pages.replaceChildren();spanElements.clear();busy=true;refresh();
   try{
@@ -470,7 +471,7 @@ file.addEventListener('change',async()=>{
     status.textContent='Loaded '+originalPages.length+' pages. Click or double-click text to edit directly.';
     if(!originalPages.some(p=>p.spans.length))status.textContent='No selectable text found. Scanned PDFs need OCR before editing.';
   }catch(err){if(current===requestId)status.textContent='Unable to open PDF: '+err.message}
-  finally{if(current===requestId){busy=false;refresh()}}
+  finally{if(current===requestId){busy=false;refresh();file.value=''}}
 });
 replacement.addEventListener('input',()=>{resizeInput();refresh()});
 replacement.addEventListener('keydown',event=>{
