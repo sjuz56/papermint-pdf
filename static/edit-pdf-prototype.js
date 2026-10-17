@@ -310,7 +310,7 @@ replacement.addEventListener('paste',event=>{
 });
 async function responseError(response){
   let message='HTTP '+response.status;
-  try{message=(await response.json()).detail||message}catch{}
+  try{const data=await response.json();const detail=data.detail;message=typeof detail==='string'?detail:detail?JSON.stringify(detail):message}catch{}
   return new Error(message);
 }
 async function inspect(source,includeFonts=true){
@@ -361,7 +361,7 @@ async function applyCurrent(){
       (result.substitutions?' A replacement font was used for '+result.substitutions+' block(s).':'');
     return true;
   }catch(err){
-    if(current===requestId)status.textContent='Unable to apply text: '+err.message;
+    if(current===requestId){status.textContent='Unable to apply text: '+err.message;status.scrollIntoView({block:'nearest'});console.error('PDFaspect apply failed',err)}
     return false;
   }finally{if(current===requestId){busy=false;refresh()}}
 }
@@ -505,7 +505,7 @@ widthHandle.addEventListener('keydown',event=>{
   }
 });
 pages.addEventListener('click',event=>{if(chosen&&!event.target.closest('.span'))applyCurrent()});
-applyBtn.addEventListener('click',async()=>{status.textContent='Apply clicked — preparing PDF…';applyBtn.textContent='Applying…';try{await applyCurrent()}catch(err){status.textContent='Unable to apply text: '+err.message}finally{applyBtn.textContent='Apply text'}});cancelBtn.addEventListener('click',closeEditor);
+applyBtn.addEventListener('click',async()=>{status.textContent='Apply clicked — preparing PDF…';applyBtn.textContent='Applying…';try{const ok=await applyCurrent();if(!ok&&status.textContent.startsWith('Apply clicked'))status.textContent='Unable to apply: the editor did not finish.'}catch(err){status.textContent='Unable to apply text: '+err.message}finally{applyBtn.textContent='Apply text';status.scrollIntoView({block:'nearest'})}});cancelBtn.addEventListener('click',closeEditor);
 async function restoreHistory(redo=false){
   if(busy)return;
   if(!redo&&draftDirty()){closeEditor();status.textContent='Unapplied changes cancelled.';return}
