@@ -313,22 +313,31 @@ async function responseError(response){
   try{const data=await response.json();const detail=data.detail;message=typeof detail==='string'?detail:detail?JSON.stringify(detail):message}catch{}
   return new Error(message);
 }
+async function timedFetch(url,options,timeoutMs=30000){
+  const controller=new AbortController();
+  const timeout=setTimeout(()=>controller.abort(),timeoutMs);
+  try{return await fetch(url,{...options,signal:controller.signal})}
+  catch(err){if(err.name==='AbortError')throw new Error('Server did not respond within '+Math.round(timeoutMs/1000)+' seconds. Please retry.');throw err}
+  finally{clearTimeout(timeout)}
+}
 async function inspect(source,includeFonts=true){
   const form=new FormData();form.append('file',source,source.name||'edited.pdf');
   form.append('include_fonts',String(includeFonts));
-  const response=await fetch('/api/experimental/inspect-pdf',{method:'POST',body:form});
+  const response=await timedFetch('/api/experimental/inspect-pdf',{method:'POST',body:form},45000);
   if(!response.ok)throw await responseError(response);
   return response.json();
 }
 async function renderChanges(next){
   if(!next.length)return {blob:null,images:originalPages.map(p=>p.image),boxes:[],substitutions:0};
   const form=new FormData();form.append('file',loadedFile);form.append('changes',JSON.stringify(next));
-  const response=await fetch('/api/experimental/edit-pdf',{method:'POST',body:form});
+  status.textContent='Sending edited PDF to server…';
+   const response=await timedFetch('/api/experimental/edit-pdf',{method:'POST',body:form},45000);
+   status.textContent='Server responded. Checking edited PDF…';
   if(!response.ok)throw await responseError(response);
   const boxes=JSON.parse(response.headers.get('X-PDFaspect-Edit-Boxes')||'[]');
   if(boxes.length!==next.length)throw new Error('Edited text positions are unavailable. Reload the editor.');
   const substitutions=Number(response.headers.get('X-PDFaspect-Font-Substitutions')||0);
-  const blob=await response.blob(),rendered=await inspect(blob,false);
+  const blob=await response.blob();status.textContent='Rendering saved PDF preview…';const rendered=await inspect(blob,false);
   if(rendered.pages.length!==originalPages.length)throw new Error('Preview page count changed unexpectedly.');
   return {blob,images:rendered.pages.map(p=>p.image),boxes,substitutions};
 }
