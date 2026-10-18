@@ -337,9 +337,16 @@ async function renderChanges(next){
   const boxes=JSON.parse(response.headers.get('X-PDFaspect-Edit-Boxes')||'[]');
   if(boxes.length!==next.length)throw new Error('Edited text positions are unavailable. Reload the editor.');
   const substitutions=Number(response.headers.get('X-PDFaspect-Font-Substitutions')||0);
-  const blob=await response.blob();status.textContent='Rendering saved PDF preview…';const rendered=await inspect(blob,false);
-  if(rendered.pages.length!==originalPages.length)throw new Error('Preview page count changed unexpectedly.');
-  return {blob,images:rendered.pages.map(p=>p.image),boxes,substitutions};
+  const blob=await response.blob();
+  // Preserve the edited file even when the secondary preview request fails.
+  status.textContent='PDF edited. Updating preview…';
+  let images=originalPages.map(p=>p.image);
+  try{
+    const rendered=await inspect(blob,false);
+    if(rendered.pages.length===originalPages.length)images=rendered.pages.map(p=>p.image);
+    else status.textContent='PDF saved; preview page count differs. Download is available.';
+  }catch(previewError){console.warn('Edited PDF preview unavailable',previewError);status.textContent='PDF saved; preview unavailable. Download is available.'}
+  return {blob,images,boxes,substitutions};
 }
 async function showResult(next,result){
   const images=pages.querySelectorAll('.page > img');
@@ -351,8 +358,9 @@ async function showResult(next,result){
     const record=spanElements.get(changeKey(next[index]));
     if(record){record.displayBBox=box.bbox;position(record,box.bbox)}
   });
-  await Promise.all(Array.from(images,img=>img.decode().catch(()=>{})));
   verifiedPdf=result.blob;
+  // The edited PDF is already saved on the server response. Do not block Apply on image decoding.
+  for(const img of images){if(img.decode)img.decode().catch(()=>{});}
 }
 async function applyCurrent(){
   if(busy||!chosen)return false;
