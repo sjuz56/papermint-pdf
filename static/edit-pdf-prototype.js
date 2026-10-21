@@ -338,15 +338,9 @@ async function renderChanges(next){
   if(boxes.length!==next.length)throw new Error('Edited text positions are unavailable. Reload the editor.');
   const substitutions=Number(response.headers.get('X-PDFaspect-Font-Substitutions')||0);
   const blob=await response.blob();
-  // Preserve the edited file even when the secondary preview request fails.
-  status.textContent='PDF edited. Updating preview…';
-  let images=originalPages.map(p=>p.image);
-  try{
-    const rendered=await inspect(blob,false);
-    if(rendered.pages.length===originalPages.length)images=rendered.pages.map(p=>p.image);
-    else status.textContent='PDF saved; preview page count differs. Download is available.';
-  }catch(previewError){console.warn('Edited PDF preview unavailable',previewError);status.textContent='PDF saved; preview unavailable. Download is available.'}
-  return {blob,images,boxes,substitutions};
+  // The edited PDF is ready immediately; do not block Apply on preview rendering.
+  return {blob,images:originalPages.map(p=>p.image),boxes,substitutions};
+
 }
 async function showResult(next,result){
   const images=pages.querySelectorAll('.page > img');
@@ -374,8 +368,22 @@ async function applyCurrent(){
     if(current!==requestId)return false;
     history.push(copyChanges(changes));future=[];changes=next;
     await showResult(next,result);closeEditor();
-    status.textContent=changes.length+' change(s) applied. Preview shows the saved PDF.'+
-      (result.substitutions?' A replacement font was used for '+result.substitutions+' block(s).':'');
+    status.textContent=changes.length+' change(s) saved. Download ready; updating preview…';
+    // Preview is best-effort and must never prevent downloading the saved PDF.
+    if(result.blob){
+      const savedBlob=result.blob,savedRequest=requestId;
+      inspect(savedBlob,false).then(rendered=>{
+        if(savedRequest!==requestId||verifiedPdf!==savedBlob)return;
+        if(rendered.pages.length!==originalPages.length)throw new Error('Preview page count differs');
+        const imgs=pages.querySelectorAll('.page > img');
+        imgs.forEach((img,index)=>{img.src=rendered.pages[index].image});
+        status.textContent=changes.length+' change(s) saved. Preview updated; download ready.';
+      }).catch(err=>{
+        console.warn('Edited PDF preview unavailable',err);
+        if(savedRequest===requestId&&verifiedPdf===savedBlob)
+          status.textContent=changes.length+' change(s) saved. Download ready; preview unavailable.';
+      });
+    }
     return true;
   }catch(err){
     if(current===requestId){status.textContent='Unable to apply text: '+err.message;status.scrollIntoView({block:'nearest'});console.error('PDFaspect apply failed',err)}
