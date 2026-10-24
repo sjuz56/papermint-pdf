@@ -386,7 +386,7 @@ async function applyCurrent(){
     }
     return true;
   }catch(err){
-    if(current===requestId){status.textContent='Unable to apply text: '+err.message;status.scrollIntoView({block:'nearest'});console.error('PDFaspect apply failed',err)}
+    if(current===requestId){status.textContent='Unable to apply text: '+err.message;status.scrollIntoView({block:'nearest'});console.error('PDFaspect apply failed',err);window.alert('PDF could not be saved: '+err.message)}
     return false;
   }finally{if(current===requestId){busy=false;refresh()}}
 }
