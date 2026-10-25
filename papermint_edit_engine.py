@@ -485,7 +485,10 @@ def replace_text(pdf_path: str, output_path: str, changes: list[TextReplacement]
         os.close(fd)
         temporary = Path(name)
         try:
-            doc.save(str(temporary), garbage=4, deflate=True)
+            # Keep original object numbers stable: widget /AP references must not be renumbered.
+            # Garbage collection level 4 deduplicates and renumbers objects, causing false
+            # signature-appearance mismatch even when the widget was never touched.
+            doc.save(str(temporary), garbage=0, deflate=True)
             with fitz.open(temporary) as saved:
                 _verify(saved, operations)
                 if widget_appearances(saved) != original_widgets:
