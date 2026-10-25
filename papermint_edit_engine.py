@@ -443,15 +443,25 @@ def replace_text(pdf_path: str, output_path: str, changes: list[TextReplacement]
                     continue
                 if any(op["area"].intersects(fitz.Rect(s["bbox"])) for s in neighbour["members"]):
                     raise PdfEditError("Replacement overlaps neighbouring text; shorten the text")
-        # Preserve signature and form widget appearances during unrelated edits.
+        # Compare actual rendered form appearances, not raw /AP object references.
+        # PyMuPDF can rewrite appearance dictionaries during save without changing
+        # what the user sees; comparing xref strings incorrectly rejects such files.
         def widget_appearances(document):
             result = []
             for page_number in range(len(document)):
-                for widget in document[page_number].widgets() or []:
-                    kind, appearance = document.xref_get_key(widget.xref, "AP")
+                page = document[page_number]
+                for widget in page.widgets() or []:
+                    rect = fitz.Rect(widget.rect)
+                    # A clip wholly inside the page captures the appearance, including
+                    # transparent signatures, at 2x resolution for a stable comparison.
+                    clip = rect & page.rect
+                    pixels = page.get_pixmap(matrix=fitz.Matrix(2, 2), clip=clip,
+                                             alpha=False, annots=True)
                     result.append((page_number, widget.field_name, widget.field_type,
-                                   tuple(round(v, 3) for v in widget.rect),
-                                   kind, appearance))
+                                   str(widget.field_value),
+                                   tuple(round(v, 3) for v in rect),
+                                   pixels.width, pixels.height,
+                                   hashlib.sha256(pixels.samples).hexdigest()))
             return result
         original_widgets = widget_appearances(doc)
         for op in operations:
