@@ -366,24 +366,20 @@ async function applyCurrent(){
   try{
     const result=await renderChanges(next);
     if(current!==requestId)return false;
-    history.push(copyChanges(changes));future=[];changes=next;
-    await showResult(next,result);closeEditor();
-    status.textContent=changes.length+' change(s) saved. Download ready; updating preview…';
-    // Preview is best-effort and must never prevent downloading the saved PDF.
-    if(result.blob){
-      const savedBlob=result.blob,savedRequest=requestId;
-      inspect(savedBlob,false).then(rendered=>{
-        if(savedRequest!==requestId||verifiedPdf!==savedBlob)return;
-        if(rendered.pages.length!==originalPages.length)throw new Error('Preview page count differs');
-        const imgs=pages.querySelectorAll('.page > img');
-        imgs.forEach((img,index)=>{img.src=rendered.pages[index].image});
-        status.textContent=changes.length+' change(s) saved. Preview updated; download ready.';
-      }).catch(err=>{
-        console.warn('Edited PDF preview unavailable',err);
-        if(savedRequest===requestId&&verifiedPdf===savedBlob)
-          status.textContent=changes.length+' change(s) saved. Download ready; preview unavailable.';
-      });
-    }
+    // Inspect the exported PDF and rebuild the editor from the actual saved bytes.
+    // Never reuse the original page image or original text hitboxes after an edit.
+    status.textContent='Verifying the saved PDF and refreshing its text…';
+    const inspected=await inspect(result.blob,false);
+    if(current!==requestId)return false;
+    if(inspected.pages.length!==originalPages.length)throw new Error('Saved PDF page count changed');
+    closeEditor();
+    loadedFile=new File([result.blob],'edited.pdf',{type:'application/pdf'});
+    verifiedPdf=result.blob;
+    changes=[];history=[];future=[];
+    originalPages=inspected.pages;
+    spanElements.clear();pages.replaceChildren();
+    buildPages();
+    status.textContent='Text saved in PDF and preview refreshed. Download is ready.';
     return true;
   }catch(err){
     if(current===requestId){status.textContent='Unable to apply text: '+err.message;status.scrollIntoView({block:'nearest'});console.error('PDFaspect apply failed',err);window.alert('PDF could not be saved: '+err.message)}
