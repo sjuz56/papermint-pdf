@@ -379,7 +379,9 @@ async function applyCurrent(){
     originalPages=inspected.pages;
     spanElements.clear();pages.replaceChildren();
     buildPages();
-    status.textContent='Text saved in PDF and preview refreshed. Download is ready.';
+    status.textContent=result.substitutions > 0
+      ? 'Text saved and preview refreshed. Warning: '+result.substitutions+' font substitution(s) were needed; compare the result visually before using the PDF.'
+      : 'Text saved in PDF and preview refreshed. Download is ready.';
     return true;
   }catch(err){
     if(current===requestId){status.textContent='Unable to apply text: '+err.message;status.scrollIntoView({block:'nearest'});console.error('PDFaspect apply failed',err);window.alert('PDF could not be saved: '+err.message)}
