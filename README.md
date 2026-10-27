@@ -2,6 +2,35 @@
 
 Functional local prototype of a multi-tool PDF web app.
 
+## Experimental direct text editor
+
+The development branch includes `/static/edit-pdf-prototype.html` and the opt-in
+`/api/experimental/inspect-pdf` and `/api/experimental/edit-pdf` endpoints. Set
+`PAPERMINT_ENABLE_EXPERIMENTAL_EDIT_PDF=1` to enable them. The separate preview
+service runs `python -m uvicorn browser_pdf_edit_server:app --app-dir tests`.
+
+Click text to edit directly on the PDF page. Apply text renders the actual edited
+PDF; Download PDF returns those same verified bytes. Enter inserts a line,
+Ctrl+Enter applies the edit, empty text deletes the block, and Undo restores the
+previous accepted changes. Failed edits leave the previous preview and export intact.
+
+The engine groups adjacent lines with the same style and wraps replacements in
+the original width. It retains embedded fonts when their glyphs are available,
+uses a disclosed fallback for missing characters, and preserves backgrounds,
+images, colour, font size and the first baseline. Text can grow down into free
+space, but cannot overlap another text block or leave the page. Mixed styles stay
+as separate runs; scans, rotated text, and pending redaction annotations are
+rejected. Limits remain 10 MB, 20 pages, 50 changes and 2,000 characters per change.
+
+Run the engine/API regression tests and the desktop/mobile Chromium test with:
+
+```bash
+python -m unittest discover -s tests -p 'test_pdf_edit_*.py'
+python tests/browser_pdf_edit_smoke.py
+```
+
+The browser test checks that rendered preview pixels match the downloaded PDF.
+
 Planned subscription price: **€7/month** or **€60/year**.
 
 ## Run
