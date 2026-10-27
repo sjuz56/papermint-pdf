@@ -300,7 +300,14 @@ replacement.addEventListener('paste',event=>{
   const text=event.clipboardData.getData('text/plain').replace(/\r\n?/g,'\n');
   const format=plain?null:readCopiedFormat(event.clipboardData,text);
   if(format?.mixed){status.textContent='The pasted text has several styles. This editor formats one block at a time; choose the font for this block.';return}
-  if(!format)return;
+  if(!format){
+    // Many mobile PDF viewers expose only plain text on the clipboard.
+    // Keep the destination block's font rather than guessing a source font.
+    status.textContent=plain
+      ? 'Pasting text only; the destination font is retained.'
+      : 'The clipboard did not include a usable source font. The destination font is retained; copy from a selectable PDF text block to preserve formatting.';
+    return;
+  }
   event.preventDefault();insertClipboardText(text);
   Object.assign(chosen,{family:format.family,fontSource:format.fontSource??null,
     bold:format.bold,italic:format.italic,size:format.size,color:format.color});
